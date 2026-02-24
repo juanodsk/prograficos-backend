@@ -1,0 +1,225 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  engineType = "library"
+}
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model User {
+  id Int @id @default(autoincrement())
+  name String 
+  surename String
+  email String @unique
+  password String
+  role Role @default(USER)
+  avatar String? @default("https://img.freepik.com/vector-premium/icono-perfil-avatar-predeterminado-imagen-usuario-redes-sociales-icono-avatar-gris-silueta-perfil-blanco-ilustracion-vectorial_561158-3383.jpg?semt=ais_user_personalization&w=740&q=80")
+  createdAt DateTime @default(now())
+  header_production_orders Header_Production_Order[]
+  user        Detail_Production_Order[] @relation("UserDetails") 
+
+    @@map("users")
+}
+
+enum Role {
+  ADMIN
+  SUPERVISOR
+  EMPLOYEE
+  USER 
+}
+
+model Process {
+  id Int @id @default(autoincrement())
+  name String
+  order String
+  use_troquel Boolean @default(false)
+  use_measure Boolean @default(false)
+  use_inks Boolean @default(false)
+  is_finished Boolean @default(false)
+
+
+  detail_production_orders Detail_Production_Order[]
+  @@map("processes")
+}
+
+model Machinery {
+  id Int @id @default(autoincrement())
+  name String
+  reference String
+  type Boolean @default(false)
+  is_active Boolean @default(true)
+  detail_production_orders Detail_Production_Order[]@relation("MachineryDetails")
+
+  @@map("machinery")
+}
+
+model Format {
+  id Int @id @default(autoincrement())
+  name String
+  is_active Boolean @default(false)
+  measures Measure[]
+
+  @@map("formats")
+
+}
+
+model Measure {
+  id Int @id @default(autoincrement())
+  width Float
+  height Float
+  format_id Int @map("format_id")
+  format Format @relation(fields: [format_id], references: [id])
+  header_production_orders Header_Production_Order[]
+
+  cutting_details          Detail_Production_Order[] @relation("MeasureCutting")
+
+  @@map("measures")
+}
+
+model Paper_Type {
+  id Int @id @default(autoincrement())
+  name String
+  description String
+  grammage Float
+  is_active Boolean @default(false)
+  header_production_orders Header_Production_Order[]
+
+  @@map("paper_types")
+}
+
+enum Thirds_type {
+  CLIENTE
+  PROVEEDOR
+  OTROS
+}
+
+model Thirds {
+  id Int @id @default(autoincrement())
+  name String
+  email String? @unique
+  address String?
+  type_person Thirds_type? @default(CLIENTE)
+  company_name String?
+  product_customers Product_Customer[]
+  is_active Boolean @default(true)
+    @@map("thirds")
+}
+
+
+model Product_Customer {
+  id         Int     @id @default(autoincrement())
+  code       String?
+  name       String?
+  product_id Int
+  third_id   Int
+  product    Product @relation(fields: [product_id], references: [id])
+  third      Thirds   @relation(fields: [third_id], references: [id])
+  header_production_orders Header_Production_Order[]
+
+  @@map("product_customer")
+}
+
+model Product {
+  id                Int               @id @default(autoincrement())
+  name              String
+  active            Boolean           @default(false)
+  product_customers Product_Customer[]
+
+  @@map("products")
+}
+
+
+enum Size {
+  SMALL
+  MEDIUM
+  LARGE
+}
+
+model Troqueles {
+  id Int @id @default(autoincrement())
+  elaboration_date DateTime @default(now())
+  code String?
+  size Size 
+  file String
+  header_production_orders Header_Production_Order[]
+
+  @@map("troqueles")
+}
+
+enum Order_Status {
+  PENDIENTE
+  EN_PROCESO
+  TERMINADO
+  ENTREGADO
+}
+
+model Header_Production_Order {
+  id Int @id @default(autoincrement())
+  datw DateTime @default(now())
+  date_delivery_estimated DateTime
+  order_status Order_Status @default(PENDIENTE)
+  amount_sheets Int
+  total_estimated Int
+  total_delivered Int?
+  total_damaged Int? 
+
+  //FK
+  measure_id Int
+  paper_type_id Int
+  troquel_id Int
+  product_customer_id Int
+  user_id Int
+
+  //Relations
+  measure                Measure         @relation(fields: [measure_id], references: [id])//
+  paper_type             Paper_Type       @relation(fields: [paper_type_id], references: [id])//
+  troquel                Troqueles        @relation(fields: [troquel_id], references: [id])//
+  product_customer       Product_Customer @relation(fields: [product_customer_id], references: [id])
+  user                   User            @relation(fields: [user_id], references: [id])
+  detail_production_orders Detail_Production_Order[]
+
+  @@map("header_production_orders")
+
+}
+
+model Detail_Production_Order {
+  id Int @id @default(autoincrement())
+  start_date DateTime
+  end_date DateTime?
+  start_hour DateTime
+  end_hour DateTime?
+  quantity_delivered Int
+  quantity_damaged Int
+  plastic_type String?
+  plastic_measure String?
+  stamping_color String?
+  observations String?
+
+
+  //FK
+  header_order_id Int
+  process_id Int
+  user_id Int
+  machinery_id Int
+  measure_cutting_id Int
+
+
+  //Relations
+  header_order    Header_Production_Order @relation(fields: [header_order_id], references: [id])
+  process         Process                 @relation(fields: [process_id], references: [id])
+  measure_cutting Measure?                @relation("MeasureCutting", fields: [measure_cutting_id], references: [id])
+  user            User                    @relation("UserDetails", fields: [user_id], references: [id])
+  machinery       Machinery               @relation("MachineryDetails", fields: [machinery_id], references: [id])
+
+  
+
+  @@map("detail_production_orders")
+}
