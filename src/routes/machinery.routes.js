@@ -1,0 +1,46 @@
+import express from "express";
+import { verifyToken } from "../middlewares/auth.middleware.js";
+
+import { authorizeRoles } from "../middlewares/role.middleware.js";
+import {
+  createMachinery,
+  getMachinery,
+  getMachineryById,
+  updateMachinery,
+  deleteMachinery,
+} from "../controllers/machinery.controller.js";
+
+const router = express.Router();
+
+router.post(
+  "/",
+  verifyToken,
+  authorizeRoles("ADMIN", "SUPERVISOR"),
+  createMachinery,
+);
+router.get(
+  "/",
+  verifyToken,
+  authorizeRoles("ADMIN", "SUPERVISOR"),
+  getMachinery,
+);
+router.get(
+  "/:id",
+  verifyToken,
+  authorizeRoles("ADMIN", "SUPERVISOR"),
+  getMachineryById,
+);
+router.put(
+  "/:id",
+  verifyToken,
+  authorizeRoles("ADMIN", "SUPERVISOR"),
+  updateMachinery,
+);
+router.delete(
+  "/:id",
+  verifyToken,
+  authorizeRoles("ADMIN", "SUPERVISOR"),
+  deleteMachinery,
+);
+
+export default router;

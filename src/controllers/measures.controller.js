@@ -109,6 +109,17 @@ const deleteMeasure = async (req, res) => {
         message: "Medida no encontrada",
       });
     }
+    const ordersCount = await prisma.header_Production_Order.count({
+      where: { paper_type_id: parseInt(id) },
+    });
+
+    if (ordersCount > 0) {
+      return res.status(400).json({
+        status: "error",
+        message: `No se puede eliminar, tiene ${ordersCount} órdenes de producción asociadas`,
+      });
+    }
+
     await prisma.measure.delete({
       where: { id: parseInt(id) },
     });

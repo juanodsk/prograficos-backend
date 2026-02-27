@@ -51,7 +51,7 @@ async function main() {
   const proceso1 = await prisma.process.create({
     data: {
       name: "Impresión",
-      order: "1",
+      order: 1,
       use_troquel: false,
       use_measure: true,
       use_inks: true,
@@ -62,7 +62,7 @@ async function main() {
   const proceso2 = await prisma.process.create({
     data: {
       name: "Troquelado",
-      order: "2",
+      order: 2,
       use_troquel: true,
       use_measure: true,
       use_inks: false,
@@ -73,7 +73,7 @@ async function main() {
   const proceso3 = await prisma.process.create({
     data: {
       name: "Plastificado",
-      order: "3",
+      order: 3,
       use_troquel: false,
       use_measure: false,
       use_inks: false,
@@ -305,7 +305,7 @@ async function main() {
       total_estimated: 500,
       measure_id: 1, // 100x70 - 1 Pliego
       paper_type_id: 1, // Propalcote 90gr
-      troquel_id: troquel1.id,
+      troquel_id: troquel.id,
       product_customer_id: pc1.id,
       user_id: admin.id,
     },
