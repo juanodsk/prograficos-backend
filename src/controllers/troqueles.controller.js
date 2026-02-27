@@ -75,9 +75,21 @@ const updateTroqueles = async (req, res) => {
 const deleteTroqueles = async (req, res) => {
   try {
     const { id } = req.params;
+    const ordersCount = await prisma.header_Production_Order.count({
+      where: { paper_type_id: parseInt(id) },
+    });
+
+    if (ordersCount > 0) {
+      return res.status(400).json({
+        status: "error",
+        message: `No se puede eliminar, tiene ${ordersCount} órdenes de producción asociadas`,
+      });
+    }
+
     const troquel = await prisma.troqueles.delete({
       where: { id: parseInt(id) },
     });
+
     res.status(200).json({
       status: "success",
       message: "Troquel eliminado exitosamente",
