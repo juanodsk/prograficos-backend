@@ -47,6 +47,23 @@ async function main() {
 
   console.log("✅ Users creados");
 
+  const troquel1 = await prisma.troqueles.create({
+    data: {
+      code: "Troquel 1",
+      size: "MEDIUM",
+      file: "troquel1.pdf",
+    },
+  });
+
+  const troquel2 = await prisma.troqueles.create({
+    data: {
+      code: "Troquel 2",
+      size: "LARGE",
+      file: "troquel1.pdf",
+    },
+  });
+  console.log("✅ Troqueles creados");
+
   // ==================== PROCESSES ====================
   const proceso1 = await prisma.process.create({
     data: {
@@ -88,7 +105,7 @@ async function main() {
     data: {
       name: "Heidelberg CD 74",
       reference: "HCD-74",
-      type: true,
+      type: "IMPRESION",
       is_active: true,
     },
   });
@@ -97,7 +114,7 @@ async function main() {
     data: {
       name: "Troqueladora Autom.",
       reference: "TRQ-AUTO-01",
-      type: false,
+      type: "TROQUELADO",
       is_active: true,
     },
   });
@@ -106,7 +123,7 @@ async function main() {
     data: {
       name: "Plastificadora",
       reference: "PLAST-01",
-      type: false,
+      type: "PLASTIFICADO",
       is_active: true,
     },
   });
@@ -305,7 +322,7 @@ async function main() {
       total_estimated: 500,
       measure_id: 1, // 100x70 - 1 Pliego
       paper_type_id: 1, // Propalcote 90gr
-      troquel_id: troquel.id,
+      troquel_id: troquel1.id,
       product_customer_id: pc1.id,
       user_id: admin.id,
     },

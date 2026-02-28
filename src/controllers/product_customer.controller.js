@@ -116,7 +116,7 @@ const deleteProductCustomer = async (req, res) => {
   try {
     const { id } = req.params;
     const ordersCount = await prisma.header_Production_Order.count({
-      where: { paper_type_id: parseInt(id) },
+      where: { product_customer_id: parseInt(id) },
     });
 
     if (ordersCount > 0) {

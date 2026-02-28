@@ -110,7 +110,7 @@ const deleteMeasure = async (req, res) => {
       });
     }
     const ordersCount = await prisma.header_Production_Order.count({
-      where: { paper_type_id: parseInt(id) },
+      where: { measure_id: parseInt(id) },
     });
 
     if (ordersCount > 0) {

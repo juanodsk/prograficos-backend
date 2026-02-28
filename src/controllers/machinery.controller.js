@@ -94,6 +94,17 @@ const updateMachinery = async (req, res) => {
 const deleteMachinery = async (req, res) => {
   try {
     const { id } = req.params;
+    const ordersCount = await prisma.detail_Production_Order.count({
+      where: { machinery_id: parseInt(id) },
+    });
+
+    if (ordersCount > 0) {
+      return res.status(400).json({
+        status: "error",
+        message: `No se puede eliminar, tiene ${ordersCount} órdenes de producción asociadas`,
+      });
+    }
+
     const machinery = await prisma.machinery.delete({
       where: {
         id: parseInt(id),
@@ -105,6 +116,7 @@ const deleteMachinery = async (req, res) => {
       data: machinery,
     });
   } catch (error) {
+    console.log(error);
     res.status(500).json({
       status: "error",
       message: "Error al eliminar la máquina",
