@@ -54,7 +54,7 @@ model Machinery {
   id Int @id @default(autoincrement())
   name String
   reference String
-  type Boolean @default(false)
+  type String
   is_active Boolean @default(true)
   detail_production_orders Detail_Production_Order[]@relation("MachineryDetails")
 
@@ -190,11 +190,12 @@ model Header_Production_Order {
 
 }
 
+
 model Detail_Production_Order {
   id Int @id @default(autoincrement())
-  start_date DateTime
+  start_date DateTime?
   end_date DateTime?
-  start_hour DateTime
+  start_hour DateTime?
   end_hour DateTime?
   quantity_delivered Int
   quantity_damaged Int
@@ -207,17 +208,17 @@ model Detail_Production_Order {
   //FK
   header_order_id Int
   process_id Int
-  user_id Int
-  machinery_id Int
-  measure_cutting_id Int
+  user_id Int?
+  machinery_id Int?
+  measure_cutting_id Int?
 
 
   //Relations
   header_order    Header_Production_Order @relation(fields: [header_order_id], references: [id])
   process         Process                 @relation(fields: [process_id], references: [id])
   measure_cutting Measure?                @relation("MeasureCutting", fields: [measure_cutting_id], references: [id])
-  user            User                    @relation("UserDetails", fields: [user_id], references: [id])
-  machinery       Machinery               @relation("MachineryDetails", fields: [machinery_id], references: [id])
+  user            User?                   @relation("UserDetails", fields: [user_id], references: [id])
+  machinery       Machinery?              @relation("MachineryDetails", fields: [machinery_id], references: [id])
 
   
 

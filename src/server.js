@@ -17,6 +17,7 @@ import productCustomerRoutes from "./routes/product_customer.routes.js";
 import paperTypeRoutes from "./routes/paper_type.routes.js";
 import processesRoutes from "./routes/processes.routes.js";
 import machineryRoutes from "./routes/machinery.routes.js";
+import orderRoutes from "./routes/order.routes.js";
 
 // SERVER CONFIGURATION//
 
@@ -25,7 +26,8 @@ connectDB();
 const app = express();
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin:
+      process.env.CORS_ORIGIN_DEVELOPMENT || process.env.CORS_ORIGIN_PRODUCTION,
     credentials: true,
   }),
 );
@@ -49,6 +51,7 @@ app.use("/product_customers", productCustomerRoutes);
 app.use("/paper_types", paperTypeRoutes);
 app.use("/processes", processesRoutes);
 app.use("/machinery", machineryRoutes);
+app.use("/order", orderRoutes);
 
 //PORT LISTENING//
 app.listen(PORT, () => {
