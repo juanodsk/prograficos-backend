@@ -1,15 +1,23 @@
-FROM node:20-bullseye-slim
+FROM node:20-bullseye-slim AS base
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -y \
+  && apt-get install -y openssl \
+  && rm -rf /var/lib/apt/lists/*
 
-COPY . .
+ENV NODE_ENV=production
 
-RUN npm install
+COPY package*.json ./
+
+RUN npm install --omit=dev
+
+COPY prisma ./prisma
 
 RUN npx prisma generate
 
+COPY . .
+
 EXPOSE 5001
 
-CMD ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed && node src/server"]
+CMD ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed || true && node src/server.js"]
