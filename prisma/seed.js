@@ -47,26 +47,34 @@ async function main() {
 
   console.log("✅ Users creados");
 
-  const troquel1 = await prisma.troqueles.create({
-    data: {
+  // ==================== TROQUELES ====================
+  const troquel1 = await prisma.troqueles.upsert({
+    where: { code: "Troquel 1" },
+    update: {},
+    create: {
       code: "Troquel 1",
       size: "MEDIUM",
       file: "troquel1.pdf",
     },
   });
 
-  const troquel2 = await prisma.troqueles.create({
-    data: {
+  const troquel2 = await prisma.troqueles.upsert({
+    where: { code: "Troquel 2" },
+    update: {},
+    create: {
       code: "Troquel 2",
       size: "LARGE",
       file: "troquel1.pdf",
     },
   });
+
   console.log("✅ Troqueles creados");
 
   // ==================== PROCESSES ====================
-  const proceso1 = await prisma.process.create({
-    data: {
+  const proceso1 = await prisma.process.upsert({
+    where: { name: "Impresión" },
+    update: {},
+    create: {
       name: "Impresión",
       order: 1,
       use_troquel: false,
@@ -76,8 +84,10 @@ async function main() {
     },
   });
 
-  const proceso2 = await prisma.process.create({
-    data: {
+  const proceso2 = await prisma.process.upsert({
+    where: { name: "Troquelado" },
+    update: {},
+    create: {
       name: "Troquelado",
       order: 2,
       use_troquel: true,
@@ -87,8 +97,10 @@ async function main() {
     },
   });
 
-  const proceso3 = await prisma.process.create({
-    data: {
+  const proceso3 = await prisma.process.upsert({
+    where: { name: "Plastificado" },
+    update: {},
+    create: {
       name: "Plastificado",
       order: 3,
       use_troquel: false,
@@ -101,8 +113,10 @@ async function main() {
   console.log("✅ Processes creados");
 
   // ==================== MACHINERY ====================
-  const maquina1 = await prisma.machinery.create({
-    data: {
+  const maquina1 = await prisma.machinery.upsert({
+    where: { reference: "HCD-74" },
+    update: {},
+    create: {
       name: "Heidelberg CD 74",
       reference: "HCD-74",
       type: "IMPRESION",
@@ -110,8 +124,10 @@ async function main() {
     },
   });
 
-  const maquina2 = await prisma.machinery.create({
-    data: {
+  const maquina2 = await prisma.machinery.upsert({
+    where: { reference: "TRQ-AUTO-01" },
+    update: {},
+    create: {
       name: "Troqueladora Autom.",
       reference: "TRQ-AUTO-01",
       type: "TROQUELADO",
@@ -119,8 +135,10 @@ async function main() {
     },
   });
 
-  const maquina3 = await prisma.machinery.create({
-    data: {
+  const maquina3 = await prisma.machinery.upsert({
+    where: { reference: "PLAST-01" },
+    update: {},
+    create: {
       name: "Plastificadora",
       reference: "PLAST-01",
       type: "PLASTIFICADO",
@@ -155,7 +173,11 @@ async function main() {
   ];
 
   for (const format of formatData) {
-    await prisma.format.create({ data: format });
+    await prisma.format.upsert({
+      where: { name: format.name },
+      update: {},
+      create: format,
+    });
   }
 
   console.log("✅ Formats creados");
@@ -190,6 +212,7 @@ async function main() {
       { width: 16.5, height: 11.5, format_id: 19 },
       { width: 9, height: 5.5, format_id: 20 },
     ],
+    skipDuplicates: true,
   });
 
   console.log("✅ Measures creadas");
@@ -240,13 +263,16 @@ async function main() {
         is_active: true,
       },
     ],
+    skipDuplicates: true,
   });
 
   console.log("✅ Paper Types creados");
 
   // ==================== THIRDS ====================
-  const third1 = await prisma.thirds.create({
-    data: {
+  const third1 = await prisma.thirds.upsert({
+    where: { email: "contacto@abc.com" },
+    update: {},
+    create: {
       name: "Empresa ABC",
       email: "contacto@abc.com",
       address: "Calle 10 # 20-30",
@@ -255,8 +281,10 @@ async function main() {
     },
   });
 
-  const third2 = await prisma.thirds.create({
-    data: {
+  const third2 = await prisma.thirds.upsert({
+    where: { email: "ventas@xyz.com" },
+    update: {},
+    create: {
       name: "Distribuidora XYZ",
       email: "ventas@xyz.com",
       address: "Carrera 5 # 15-20",
@@ -265,8 +293,10 @@ async function main() {
     },
   });
 
-  const third3 = await prisma.thirds.create({
-    data: {
+  const third3 = await prisma.thirds.upsert({
+    where: { email: "juan@gmail.com" },
+    update: {},
+    create: {
       name: "Juan Pérez",
       email: "juan@gmail.com",
       address: "Calle 50 # 30-10",
@@ -278,23 +308,31 @@ async function main() {
   console.log("✅ Thirds creados");
 
   // ==================== PRODUCTS ====================
-  const product1 = await prisma.product.create({
-    data: { name: "Volante 1/4", active: true },
+  const product1 = await prisma.product.upsert({
+    where: { name: "Volante 1/4" },
+    update: {},
+    create: { name: "Volante 1/4", active: true },
   });
 
-  const product2 = await prisma.product.create({
-    data: { name: "Afiche Pliego", active: true },
+  const product2 = await prisma.product.upsert({
+    where: { name: "Afiche Pliego" },
+    update: {},
+    create: { name: "Afiche Pliego", active: true },
   });
 
-  const product3 = await prisma.product.create({
-    data: { name: "Tarjeta Personal", active: true },
+  const product3 = await prisma.product.upsert({
+    where: { name: "Tarjeta Personal" },
+    update: {},
+    create: { name: "Tarjeta Personal", active: true },
   });
 
   console.log("✅ Products creados");
 
   // ==================== PRODUCT CUSTOMER ====================
-  const pc1 = await prisma.product_Customer.create({
-    data: {
+  const pc1 = await prisma.product_Customer.upsert({
+    where: { code: "PC-001" },
+    update: {},
+    create: {
       code: "PC-001",
       name: "Volante Empresa ABC",
       product_id: product1.id,
@@ -302,8 +340,10 @@ async function main() {
     },
   });
 
-  const pc2 = await prisma.product_Customer.create({
-    data: {
+  const pc2 = await prisma.product_Customer.upsert({
+    where: { code: "PC-002" },
+    update: {},
+    create: {
       code: "PC-002",
       name: "Tarjeta Juan Pérez",
       product_id: product3.id,
@@ -314,29 +354,33 @@ async function main() {
   console.log("✅ Product Customers creados");
 
   // ==================== HEADER PRODUCTION ORDER ====================
-  const header1 = await prisma.header_Production_Order.create({
-    data: {
+  await prisma.header_Production_Order.upsert({
+    where: { id: 1 },
+    update: {},
+    create: {
       date_delivery_estimated: new Date("2025-03-01"),
       order_status: "PENDIENTE",
       amount_sheets: 1000,
       total_estimated: 500,
-      measure_id: 1, // 100x70 - 1 Pliego
-      paper_type_id: 1, // Propalcote 90gr
+      measure_id: 1,
+      paper_type_id: 1,
       troquel_id: troquel1.id,
       product_customer_id: pc1.id,
       user_id: admin.id,
     },
   });
 
-  const header2 = await prisma.header_Production_Order.create({
-    data: {
+  await prisma.header_Production_Order.upsert({
+    where: { id: 2 },
+    update: {},
+    create: {
       date_delivery_estimated: new Date("2025-03-15"),
       order_status: "EN_PROCESO",
       amount_sheets: 2000,
       total_estimated: 1800,
       total_delivered: 500,
-      measure_id: 5, // 50x35 - 1/4 Pliego
-      paper_type_id: 3, // Propalcote 150gr
+      measure_id: 5,
+      paper_type_id: 3,
       troquel_id: troquel2.id,
       product_customer_id: pc2.id,
       user_id: supervisor.id,
@@ -346,23 +390,27 @@ async function main() {
   console.log("✅ Headers creados");
 
   // ==================== DETAIL PRODUCTION ORDER ====================
-  await prisma.detail_Production_Order.create({
-    data: {
+  await prisma.detail_Production_Order.upsert({
+    where: { id: 1 },
+    update: {},
+    create: {
       start_date: new Date("2025-02-01"),
       start_hour: new Date("2025-02-01T08:00:00"),
       quantity_delivered: 1000,
       quantity_damaged: 10,
       observations: "Sin novedades",
-      header_order_id: header1.id,
-      process_id: proceso1.id, // Impresión
+      header_order_id: 1,
+      process_id: proceso1.id,
       user_id: operario.id,
-      machinery_id: maquina1.id, // Heidelberg
-      measure_cutting_id: 1, // 100x70
+      machinery_id: maquina1.id,
+      measure_cutting_id: 1,
     },
   });
 
-  await prisma.detail_Production_Order.create({
-    data: {
+  await prisma.detail_Production_Order.upsert({
+    where: { id: 2 },
+    update: {},
+    create: {
       start_date: new Date("2025-02-10"),
       start_hour: new Date("2025-02-10T08:00:00"),
       end_date: new Date("2025-02-10"),
@@ -373,11 +421,11 @@ async function main() {
       plastic_measure: "100x70",
       stamping_color: "Dorado",
       observations: "Plastificado mate con troquel",
-      header_order_id: header2.id,
-      process_id: proceso2.id, // Troquelado
+      header_order_id: 2,
+      process_id: proceso2.id,
       user_id: operario.id,
-      machinery_id: maquina2.id, // Troqueladora
-      measure_cutting_id: 5, // 50x35
+      machinery_id: maquina2.id,
+      measure_cutting_id: 5,
     },
   });
 
