@@ -53,9 +53,67 @@ const createOrder = async (req, res) => {
     console.log(error);
   }
 };
-const getOrders = async (req, res) => {};
+const getOrders = async (req, res) => {
+  try {
+    const orders = await prisma.header_Production_Order.findMany({
+      include: {
+        product_customer: {
+          include: {
+            third: true,
+            product: true,
+          },
+        },
+        measure: true,
+        paper_type: true,
+        troquel: true,
+        user: {
+          select: {
+            id: true,
+            name: true,
+            surename: true,
+          },
+        },
+      },
+      orderBy: { date: "desc" },
+    });
+
+    res.status(200).json({
+      status: "success",
+      data: orders,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error al obtener las órdenes" });
+  }
+};
 const getOrderById = async (req, res) => {};
 const updateOrder = async (req, res) => {};
 const deleteOrder = async (req, res) => {};
+const orderFinished = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const order = await prisma.header_Production_Order.update({
+      where: { id: parseInt(id) },
+      data: { order_status: "TERMINADO" },
+    });
+    res.status(200).json({
+      status: "success",
+      message: "Orden finalizada exitosamente",
+      data: order,
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: "error",
+      message: "Error al finalizar la orden",
+    });
+  }
+};
 
-export { createOrder, getOrders, getOrderById, updateOrder, deleteOrder };
+export {
+  createOrder,
+  getOrders,
+  getOrderById,
+  updateOrder,
+  deleteOrder,
+  orderFinished,
+};

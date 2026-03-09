@@ -1,20 +1,16 @@
-# Imagen base
-FROM node:20
+FROM node:20-bullseye-slim
 
-# Crear carpeta de trabajo
 WORKDIR /app
 
-# Copiar package.json primero
-COPY package*.json ./
+RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
-# Instalar dependencias
+COPY package*.json ./
 RUN npm install
 
-# Copiar el resto del proyecto
 COPY . .
 
-# Exponer puerto
+RUN npx prisma generate
+
 EXPOSE 5001
 
-# Comando de inicio
 CMD ["npm", "run", "dev"]

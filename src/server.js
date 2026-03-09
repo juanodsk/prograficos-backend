@@ -26,8 +26,18 @@ connectDB();
 const app = express();
 app.use(
   cors({
-    origin:
-      process.env.CORS_ORIGIN_DEVELOPMENT || process.env.CORS_ORIGIN_PRODUCTION,
+    origin: (origin, callback) => {
+      const allowed = [
+        process.env.CORS_ORIGIN_DEVELOPMENT,
+        process.env.CORS_ORIGIN_PRODUCTION,
+      ].filter(Boolean);
+
+      if (!origin || allowed.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS bloqueado: ${origin}`));
+      }
+    },
     credentials: true,
   }),
 );
