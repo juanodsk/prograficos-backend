@@ -7,6 +7,7 @@ import {
   getOrderById,
   updateOrder,
   deleteOrder,
+  orderFinished,
 } from "../controllers/order.controller.js";
 const router = express.Router();
 
@@ -29,6 +30,12 @@ router.delete(
   verifyToken,
   authorizeRoles("ADMIN", "SUPERVISOR"),
   deleteOrder,
+);
+router.patch(
+  "/:id/finish",
+  verifyToken,
+  authorizeRoles("ADMIN", "SUPERVISOR"),
+  orderFinished,
 );
 
 export default router;
