@@ -3,36 +3,59 @@ import bcrypt from "bcryptjs";
 
 const getUsers = async (req, res) => {
   try {
-    const users = await prisma.user.findMany();
+    const users = await prisma.user.findMany({
+      where: {
+        is_active: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        surename: true,
+        email: true,
+        role: true,
+        avatar: true,
+        createdAt: true,
+      },
+    });
+
     res.json(users);
   } catch (error) {
     res.status(500).json({ message: "Error al obtener usuarios" });
   }
 };
+
 const createUser = async (req, res) => {
   try {
     const { name, surename, email, password, role, avatar } = req.body;
 
-    //ROLE VALIDATION//
-    const validRoles = ["ADMIN", "SUPERVISOR", "EMPLOYEE", "USER"];
-    if (role && !validRoles.includes(role)) {
-      return res.status(400).json({ message: "Rol Invalido" });
+    // Solo ADMIN puede crear usuarios ADMIN
+    if (role === "ADMIN" && req.user.role !== "ADMIN") {
+      return res.status(403).json({
+        message: "No tienes permiso para crear usuarios con rol ADMIN",
+      });
     }
 
-    // Verificar si el usuario ya existe
-    const userExists = await prisma.user.findUnique({
-      where: { email },
+    const validRoles = ["ADMIN", "SUPERVISOR", "EMPLOYEE", "USER"];
+    if (role && !validRoles.includes(role)) {
+      return res.status(400).json({ message: "Rol inválido" });
+    }
+
+    // Verificar si el usuario ya existe (solo activos)
+    const userExists = await prisma.user.findFirst({
+      where: {
+        email,
+        is_active: true,
+      },
     });
+
     if (userExists) {
       return res
         .status(400)
-        .json({ message: "Usuario ya existe con este email" });
+        .json({ message: "Ya existe un usuario con este email" });
     }
-    // HASH PASSWORD
+
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
-
-    //CREATE USER
 
     const user = await prisma.user.create({
       data: {
@@ -41,7 +64,7 @@ const createUser = async (req, res) => {
         email,
         password: hashedPassword,
         role: role || "USER",
-        avatar,
+        ...(avatar && { avatar }),
       },
       select: {
         id: true,
@@ -52,6 +75,7 @@ const createUser = async (req, res) => {
         avatar: true,
       },
     });
+
     res.status(201).json({
       status: "success",
       message: "Usuario creado exitosamente",
@@ -66,9 +90,14 @@ const createUser = async (req, res) => {
 const getUserById = async (req, res) => {
   try {
     const { id } = req.params;
-    const user = await prisma.user.findUnique({
-      where: { id: parseInt(id) },
+
+    const user = await prisma.user.findFirst({
+      where: {
+        id: parseInt(id),
+        is_active: true,
+      },
       select: {
+        id: true,
         name: true,
         surename: true,
         email: true,
@@ -76,9 +105,11 @@ const getUserById = async (req, res) => {
         avatar: true,
       },
     });
+
     if (!user) {
       return res.status(404).json({ message: "Usuario no encontrado" });
     }
+
     res.status(200).json({
       status: "success",
       data: { user },
@@ -91,25 +122,48 @@ const getUserById = async (req, res) => {
 const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, surename, email, password, role } = req.body;
+    const { name, surename, email, password, role, avatar } = req.body;
 
-    // Solo ADMIN puede cambiar roles
-    if (role && req.user.role !== "ADMIN") {
-      return res.status(403).json({
-        message: "Solo un administrador puede cambiar roles",
-      });
-    }
-
-    // Verificar que el usuario existe
-    const userExists = await prisma.user.findUnique({
-      where: { id: parseInt(id) },
+    const userExists = await prisma.user.findFirst({
+      where: {
+        id: parseInt(id),
+        is_active: true,
+      },
     });
+
     if (!userExists) {
       return res.status(404).json({ message: "Usuario no encontrado" });
     }
 
-    // Si viene contraseña nueva, hashearla
+    // Solo ADMIN puede editar ADMIN
+    if (userExists.role === "ADMIN" && req.user.role !== "ADMIN") {
+      return res.status(403).json({
+        message: "Solo un administrador puede editar usuarios ADMIN",
+      });
+    }
+
+    // Validación cambio de rol
+    if (role) {
+      const rolesPermitidosSupervisor = ["EMPLOYEE", "USER", "SUPERVISOR"];
+
+      if (
+        req.user.role === "SUPERVISOR" &&
+        !rolesPermitidosSupervisor.includes(role)
+      ) {
+        return res.status(403).json({
+          message: "Un supervisor solo puede asignar roles EMPLOYEE o USER",
+        });
+      }
+
+      if (req.user.role !== "ADMIN" && req.user.role !== "SUPERVISOR") {
+        return res.status(403).json({
+          message: "No tienes permisos para cambiar roles",
+        });
+      }
+    }
+
     let hashedPassword;
+
     if (password) {
       const salt = await bcrypt.genSalt(10);
       hashedPassword = await bcrypt.hash(password, salt);
@@ -123,6 +177,7 @@ const updateUser = async (req, res) => {
         ...(email && { email }),
         ...(password && { password: hashedPassword }),
         ...(role && { role }),
+        ...(avatar && { avatar }),
       },
       select: {
         id: true,
@@ -130,6 +185,7 @@ const updateUser = async (req, res) => {
         surename: true,
         email: true,
         role: true,
+        avatar: true,
         createdAt: true,
       },
     });
@@ -144,19 +200,10 @@ const updateUser = async (req, res) => {
     res.status(500).json({ message: "Error al actualizar el usuario" });
   }
 };
+
 const deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const ordersCount = await prisma.header_Production_Order.count({
-      where: { user_id: parseInt(id) },
-    });
-
-    if (ordersCount > 0) {
-      return res.status(400).json({
-        status: "error",
-        message: `No se puede eliminar, tiene ${ordersCount} órdenes de producción asociadas`,
-      });
-    }
 
     // No puede eliminarse a sí mismo
     if (req.user.id === parseInt(id)) {
@@ -165,10 +212,10 @@ const deleteUser = async (req, res) => {
         .json({ message: "No puedes eliminarte a ti mismo" });
     }
 
-    // Verificar que el usuario existe
     const userExists = await prisma.user.findUnique({
       where: { id: parseInt(id) },
     });
+
     if (!userExists) {
       return res.status(404).json({ message: "Usuario no encontrado" });
     }
@@ -183,13 +230,17 @@ const deleteUser = async (req, res) => {
       });
     }
 
-    await prisma.user.delete({
+    // Soft delete
+    await prisma.user.update({
       where: { id: parseInt(id) },
+      data: {
+        is_active: false,
+      },
     });
 
     res.status(200).json({
       status: "success",
-      message: "Usuario eliminado exitosamente",
+      message: "Usuario desactivado exitosamente",
     });
   } catch (error) {
     console.error(error);
