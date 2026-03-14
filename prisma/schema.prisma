@@ -50,8 +50,11 @@ model User {
   password  String
   role      Role     @default(USER)
   avatar    String?  @default("https://img.freepik.com/vector-premium/icono-perfil-avatar-predeterminado-imagen-usuario-redes-sociales-icono-avatar-gris-silueta-perfil-blanco-ilustracion-vectorial_561158-3383.jpg")
-  createdAt DateTime @default(now())
 
+  is_active Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
   header_production_orders Header_Production_Order[]
   user                     Detail_Production_Order[] @relation("UserDetails")
 
@@ -71,6 +74,8 @@ model Process {
   use_inks      Boolean @default(false)
   is_finished   Boolean @default(false)
 
+  is_active Boolean @default(true)
+
   detail_production_orders Detail_Production_Order[]
 
   @@map("processes")
@@ -85,6 +90,7 @@ model Machinery {
   name      String
   reference String  @unique
   type      String
+
   is_active Boolean @default(true)
 
   detail_production_orders Detail_Production_Order[] @relation("MachineryDetails")
@@ -99,7 +105,8 @@ model Machinery {
 model Format {
   id        Int     @id @default(autoincrement())
   name      String  @unique
-  is_active Boolean @default(false)
+
+  is_active Boolean @default(true)
 
   measures Measure[]
 
@@ -115,6 +122,8 @@ model Measure {
   width     Float
   height    Float
   format_id Int
+
+  is_active Boolean @default(true)
 
   format Format @relation(fields: [format_id], references: [id])
 
@@ -133,7 +142,8 @@ model Paper_Type {
   name        String
   description String
   grammage    Float
-  is_active   Boolean @default(false)
+
+  is_active Boolean @default(true)
 
   header_production_orders Header_Production_Order[]
 
@@ -151,7 +161,8 @@ model Thirds {
   address      String?
   type_person  Thirds_type? @default(CLIENTE)
   company_name String?
-  is_active    Boolean      @default(true)
+
+  is_active Boolean @default(true)
 
   product_customers Product_Customer[]
 
@@ -163,9 +174,10 @@ model Thirds {
 //////////////////////////////////////////////////////
 
 model Product {
-  id     Int     @id @default(autoincrement())
-  name   String  @unique
-  active Boolean @default(false)
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  is_active Boolean @default(true)
 
   product_customers Product_Customer[]
 
@@ -177,12 +189,14 @@ model Product {
 //////////////////////////////////////////////////////
 
 model Product_Customer {
-  id         Int     @id @default(autoincrement())
-  code       String? @unique
-  name       String?
+  id   Int     @id @default(autoincrement())
+  code String? @unique
+  name String?
 
   product_id Int
   third_id   Int
+
+  is_active Boolean @default(true)
 
   product Product @relation(fields: [product_id], references: [id])
   third   Thirds  @relation(fields: [third_id], references: [id])
@@ -202,6 +216,8 @@ model Troqueles {
   code             String?  @unique
   size             Size
   file             String
+
+  is_active Boolean @default(true)
 
   header_production_orders Header_Production_Order[]
 
@@ -262,11 +278,11 @@ model Detail_Production_Order {
 
   observations String?
 
-  header_order_id     Int
-  process_id          Int
-  user_id             Int?
-  machinery_id        Int?
-  measure_cutting_id  Int?
+  header_order_id    Int
+  process_id         Int
+  user_id            Int?
+  machinery_id       Int?
+  measure_cutting_id Int?
 
   header_order Header_Production_Order @relation(fields: [header_order_id], references: [id])
   process      Process                 @relation(fields: [process_id], references: [id])

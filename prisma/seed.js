@@ -18,6 +18,7 @@ async function main() {
       email: "admin@prograficos.com",
       password: await bcrypt.hash("admin123", salt),
       role: "ADMIN",
+      is_active: true,
     },
   });
 
@@ -30,6 +31,7 @@ async function main() {
       email: "supervisor@prograficos.com",
       password: await bcrypt.hash("super123", salt),
       role: "SUPERVISOR",
+      is_active: true,
     },
   });
 
@@ -42,6 +44,7 @@ async function main() {
       email: "operario@prograficos.com",
       password: await bcrypt.hash("operario123", salt),
       role: "EMPLOYEE",
+      is_active: true,
     },
   });
 
@@ -55,6 +58,7 @@ async function main() {
       code: "Troquel 1",
       size: "MEDIUM",
       file: "troquel1.pdf",
+      is_active: true,
     },
   });
 
@@ -65,6 +69,7 @@ async function main() {
       code: "Troquel 2",
       size: "LARGE",
       file: "troquel2.pdf",
+      is_active: true,
     },
   });
 
@@ -81,6 +86,7 @@ async function main() {
       use_measure: true,
       use_inks: true,
       is_finished: false,
+      is_active: true,
     },
   });
 
@@ -94,6 +100,7 @@ async function main() {
       use_measure: true,
       use_inks: false,
       is_finished: false,
+      is_active: true,
     },
   });
 
@@ -107,6 +114,7 @@ async function main() {
       use_measure: false,
       use_inks: false,
       is_finished: false,
+      is_active: true,
     },
   });
 
@@ -151,26 +159,26 @@ async function main() {
   // ==================== FORMATS ====================
   await prisma.format.createMany({
     data: [
-      { name: "1 Pliego" },
-      { name: "1/2 Pliego" },
-      { name: "1/3 Pliego" },
-      { name: "1/4 Pliego" },
-      { name: "1/5 Pliego" },
-      { name: "1/6 Pliego" },
-      { name: "1/8 Pliego" },
-      { name: "1/9 Pliego" },
-      { name: "1/10 Pliego" },
-      { name: "1/12 Pliego" },
-      { name: "1/15 Pliego" },
-      { name: "1/16 Pliego" },
-      { name: "1/18 Pliego" },
-      { name: "1/20 Pliego" },
-      { name: "1/22 Pliego" },
-      { name: "1/24 Pliego" },
-      { name: "1/25 Pliego" },
-      { name: "1/32 Pliego" },
-      { name: "1/36 Pliego" },
-      { name: "1/132 Pliego" },
+      { name: "1 Pliego", is_active: true },
+      { name: "1/2 Pliego", is_active: true },
+      { name: "1/3 Pliego", is_active: true },
+      { name: "1/4 Pliego", is_active: true },
+      { name: "1/5 Pliego", is_active: true },
+      { name: "1/6 Pliego", is_active: true },
+      { name: "1/8 Pliego", is_active: true },
+      { name: "1/9 Pliego", is_active: true },
+      { name: "1/10 Pliego", is_active: true },
+      { name: "1/12 Pliego", is_active: true },
+      { name: "1/15 Pliego", is_active: true },
+      { name: "1/16 Pliego", is_active: true },
+      { name: "1/18 Pliego", is_active: true },
+      { name: "1/20 Pliego", is_active: true },
+      { name: "1/22 Pliego", is_active: true },
+      { name: "1/24 Pliego", is_active: true },
+      { name: "1/25 Pliego", is_active: true },
+      { name: "1/32 Pliego", is_active: true },
+      { name: "1/36 Pliego", is_active: true },
+      { name: "1/132 Pliego", is_active: true },
     ],
     skipDuplicates: true,
   });
@@ -238,6 +246,7 @@ async function main() {
       address: "Calle 10 #20-30",
       type_person: "CLIENTE",
       company_name: "ABC S.A.S",
+      is_active: true,
     },
   });
 
@@ -250,6 +259,7 @@ async function main() {
       address: "Carrera 5 #15-20",
       type_person: "PROVEEDOR",
       company_name: "XYZ Ltda",
+      is_active: true,
     },
   });
 
@@ -262,6 +272,7 @@ async function main() {
       address: "Calle 50 #30-10",
       type_person: "CLIENTE",
       company_name: null,
+      is_active: true,
     },
   });
 
@@ -271,19 +282,19 @@ async function main() {
   const product1 = await prisma.product.upsert({
     where: { name: "Volante 1/4" },
     update: {},
-    create: { name: "Volante 1/4", active: true },
+    create: { name: "Volante 1/4", is_active: true },
   });
 
   const product2 = await prisma.product.upsert({
     where: { name: "Afiche Pliego" },
     update: {},
-    create: { name: "Afiche Pliego", active: true },
+    create: { name: "Afiche Pliego", is_active: true },
   });
 
   const product3 = await prisma.product.upsert({
     where: { name: "Tarjeta Personal" },
     update: {},
-    create: { name: "Tarjeta Personal", active: true },
+    create: { name: "Tarjeta Personal", is_active: true },
   });
 
   console.log("✅ Products listos");
@@ -297,6 +308,7 @@ async function main() {
       name: "Volante Empresa ABC",
       product_id: product1.id,
       third_id: third1.id,
+      is_active: true,
     },
   });
 
@@ -308,84 +320,11 @@ async function main() {
       name: "Tarjeta Juan Pérez",
       product_id: product3.id,
       third_id: third3.id,
+      is_active: true,
     },
   });
 
   console.log("✅ Product customers listos");
-
-  // ==================== HEADER PRODUCTION ORDER ====================
-  const header1 = await prisma.header_Production_Order.upsert({
-    where: { id: 1 },
-    update: {},
-    create: {
-      date_delivery_estimated: new Date("2025-03-01"),
-      order_status: "PENDIENTE",
-      amount_sheets: 1000,
-      total_estimated: 500,
-      measure_id: 1,
-      paper_type_id: 1,
-      troquel_id: troquel1.id,
-      product_customer_id: pc1.id,
-      user_id: admin.id,
-    },
-  });
-
-  const header2 = await prisma.header_Production_Order.upsert({
-    where: { id: 2 },
-    update: {},
-    create: {
-      date_delivery_estimated: new Date("2025-03-15"),
-      order_status: "EN_PROCESO",
-      amount_sheets: 2000,
-      total_estimated: 1800,
-      total_delivered: 500,
-      measure_id: 5,
-      paper_type_id: 3,
-      troquel_id: troquel2.id,
-      product_customer_id: pc2.id,
-      user_id: supervisor.id,
-    },
-  });
-
-  console.log("✅ Headers listos");
-
-  // ==================== DETAIL PRODUCTION ORDER ====================
-  await prisma.detail_Production_Order.createMany({
-    data: [
-      {
-        start_date: new Date("2025-02-01"),
-        start_hour: new Date("2025-02-01T08:00:00"),
-        quantity_delivered: 1000,
-        quantity_damaged: 10,
-        observations: "Sin novedades",
-        header_order_id: header1.id,
-        process_id: proceso1.id,
-        user_id: operario.id,
-        machinery_id: maquina1.id,
-        measure_cutting_id: 1,
-      },
-      {
-        start_date: new Date("2025-02-10"),
-        start_hour: new Date("2025-02-10T08:00:00"),
-        end_date: new Date("2025-02-10"),
-        end_hour: new Date("2025-02-10T17:00:00"),
-        quantity_delivered: 500,
-        quantity_damaged: 5,
-        plastic_type: "Mate",
-        plastic_measure: "100x70",
-        stamping_color: "Dorado",
-        observations: "Plastificado mate con troquel",
-        header_order_id: header2.id,
-        process_id: proceso2.id,
-        user_id: operario.id,
-        machinery_id: maquina2.id,
-        measure_cutting_id: 5,
-      },
-    ],
-    skipDuplicates: true,
-  });
-
-  console.log("✅ Details listos");
 
   console.log("🎉 Seed ejecutado correctamente");
 }
