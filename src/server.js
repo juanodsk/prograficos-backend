@@ -54,7 +54,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan("dev"));
 app.use(cookieParser());
-
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 //API ROUTES//
 app.use("/users", userRoutes);
 app.use("/auth", authRoutes);
