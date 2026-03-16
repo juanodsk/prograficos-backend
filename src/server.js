@@ -24,20 +24,32 @@ import orderRoutes from "./routes/order.routes.js";
 config();
 connectDB();
 const app = express();
+const devOrigins =
+  process.env.CORS_ORIGIN_DEVELOPMENT?.split(",").map((o) => o.trim()) || [];
+
+const prodOrigins =
+  process.env.CORS_ORIGIN_PRODUCTION?.split(",").map((o) => o.trim()) || [];
+
+const allowedOrigins =
+  process.env.NODE_ENV === "production" ? prodOrigins : devOrigins;
+
 app.use(
   cors({
     origin: (origin, callback) => {
-      const allowed = [
-        process.env.CORS_ORIGIN_DEVELOPMENT,
-        process.env.CORS_ORIGIN_PRODUCTION,
-      ].filter(Boolean);
-
-      if (!origin || allowed.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error(`CORS bloqueado: ${origin}`));
+      // Permitir peticiones sin origin (Postman, curl, backend calls)
+      if (!origin) {
+        return callback(null, true);
       }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      console.error("CORS bloqueado:", origin);
+
+      return callback(new Error(`CORS bloqueado para el origen: ${origin}`));
     },
+
     credentials: true,
   }),
 );
