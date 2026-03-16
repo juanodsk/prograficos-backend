@@ -20,4 +20,4 @@ COPY . .
 
 EXPOSE 5001
 
-CMD ["sh", "-c", "npx prisma migrate resolve --rolled-back 20260314173459_soft_delete_system || true && npx prisma migrate deploy && npx prisma db seed || true && node src/server.js"]
+CMD ["sh", "-c", "npx prisma migrate reset --force && npx prisma db seed && node src/server.js"]
