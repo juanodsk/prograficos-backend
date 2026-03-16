@@ -20,4 +20,4 @@ COPY . .
 
 EXPOSE 5001
 
-CMD ["sh", "-c", "npx prisma migrate deploy || (echo 'repairing migrations...' && npx prisma migrate resolve --rolled-back $(ls prisma/migrations | tail -n 1) || true) && npx prisma db seed || true && node src/server.js"]
+CMD ["sh", "-c", "npx prisma migrate resolve --rolled-back 20260314173459_soft_delete_system || true && npx prisma migrate deploy && npx prisma db seed || true && node src/server.js"]
