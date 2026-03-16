@@ -2,11 +2,24 @@ import { prisma } from "../config/db.js";
 
 const createProduct = async (req, res) => {
   try {
-    const { name, active } = req.body;
+    const { name, is_active } = req.body;
+
+    const productExists = await prisma.product.findFirst({
+      where: {
+        name,
+        is_active: true,
+      },
+    });
+
+    if (productExists) {
+      return res
+        .status(400)
+        .json({ message: "Ya existe un producto con este nombre" });
+    }
     const product = await prisma.product.create({
       data: {
         name,
-        active,
+        is_active,
       },
     });
     res.status(201).json({
@@ -63,7 +76,7 @@ const getProducts = async (req, res) => {
 const updateProduct = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, active } = req.body;
+    const { name, is_active } = req.body;
     const productExists = await prisma.product.findUnique({
       where: {
         id: parseInt(id),
@@ -83,7 +96,7 @@ const updateProduct = async (req, res) => {
       },
       data: {
         name,
-        active,
+        is_active,
       },
     });
     res.status(200).json({
