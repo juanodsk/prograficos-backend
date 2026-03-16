@@ -24,35 +24,29 @@ import orderRoutes from "./routes/order.routes.js";
 config();
 connectDB();
 const app = express();
-const devOrigins =
-  process.env.CORS_ORIGIN_DEVELOPMENT?.split(",").map((o) => o.trim()) || [];
-
-const prodOrigins =
-  process.env.CORS_ORIGIN_PRODUCTION?.split(",").map((o) => o.trim()) || [];
-
-const allowedOrigins =
-  process.env.NODE_ENV === "production" ? prodOrigins : devOrigins;
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "https://prograficos.opita.dev",
+];
 
 app.use(
   cors({
-    origin: (origin, callback) => {
-      // Permitir peticiones sin origin (Postman, curl, backend calls)
-      if (!origin) {
-        return callback(null, true);
-      }
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true);
 
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
 
-      console.error("CORS bloqueado:", origin);
+      console.log("CORS bloqueado:", origin);
 
-      return callback(new Error(`CORS bloqueado para el origen: ${origin}`));
+      return callback(new Error("No permitido por CORS"));
     },
-
     credentials: true,
   }),
 );
+
 const PORT = 5001;
 
 //BODY PARSING MIDDLEWARES//
