@@ -20,4 +20,4 @@ COPY . .
 
 EXPOSE 5001
 
-CMD ["sh", "-c", "npx prisma migrate reset --force && npx prisma db seed && node src/server.js"]
+CMD ["npm","run","start:prod"]
