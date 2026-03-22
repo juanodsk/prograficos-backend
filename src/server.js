@@ -51,10 +51,11 @@ const PORT = 5001;
 
 //BODY PARSING MIDDLEWARES//
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 app.use(morgan("dev"));
 app.use(cookieParser());
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use(express.json({ limit: "50mb" })); // suficiente para Base64 grande, si realmente quieres seguir usando JSON
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+
 //API ROUTES//
 app.use("/users", userRoutes);
 app.use("/auth", authRoutes);
