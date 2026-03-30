@@ -257,7 +257,10 @@ model Troqueles {
   elaboration_date DateTime @default(now())
   code             String?  @unique
   size             Size
+  file_name        String? 
   file             String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime  @default(now())
 
   is_active Boolean @default(true)
 

@@ -4,10 +4,23 @@ import { buildActiveWhere, normalizeIsActive } from "../utils/active.js";
 const createProduct = async (req, res) => {
   try {
     const { name, is_active } = req.body;
+
+    const productExists = await prisma.product.findFirst({
+      where: {
+        name,
+        is_active: true,
+      },
+    });
+
+    if (productExists) {
+      return res
+        .status(400)
+        .json({ message: "Ya existe un producto con este nombre" });
+    }
     const product = await prisma.product.create({
       data: {
         name,
-        is_active: normalizeIsActive(is_active, true),
+        is_active,
       },
     });
     res.status(201).json({
@@ -87,7 +100,7 @@ const updateProduct = async (req, res) => {
       },
       data: {
         name,
-        is_active: normalizeIsActive(is_active, productExists.is_active),
+        is_active,
       },
     });
     res.status(200).json({
