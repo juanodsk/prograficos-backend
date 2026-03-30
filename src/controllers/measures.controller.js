@@ -1,14 +1,35 @@
 import { prisma } from "../config/db.js";
+import { buildActiveWhere, normalizeIsActive } from "../utils/active.js";
+
+const measureInclude = {
+  format: true,
+};
 
 const createMeasure = async (req, res) => {
   try {
-    const { width, height, format_id } = req.body;
+    const { width, height, format_id, is_active } = req.body;
+    const format = await prisma.format.findFirst({
+      where: {
+        id: Number(format_id),
+        is_active: true,
+      },
+    });
+
+    if (!format) {
+      return res.status(400).json({
+        status: "error",
+        message: "El formato seleccionado no existe o está inactivo",
+      });
+    }
+
     const measure = await prisma.measure.create({
       data: {
         width,
         height,
         format_id,
+        is_active: normalizeIsActive(is_active, true),
       },
+      include: measureInclude,
     });
     res.status(201).json({
       status: "success",
@@ -24,7 +45,11 @@ const createMeasure = async (req, res) => {
 };
 const getMeasure = async (req, res) => {
   try {
-    const measures = await prisma.measure.findMany();
+    const measures = await prisma.measure.findMany({
+      where: buildActiveWhere(req.query),
+      include: measureInclude,
+      orderBy: [{ width: "asc" }, { height: "asc" }],
+    });
     res.status(200).json({
       status: "success",
       data: measures,
@@ -43,6 +68,7 @@ const getMeasureById = async (req, res) => {
       where: {
         id: parseInt(id),
       },
+      include: measureInclude,
     });
     if (!measure) {
       return res.status(404).json({
@@ -65,7 +91,7 @@ const getMeasureById = async (req, res) => {
 const updateMeasure = async (req, res) => {
   try {
     const { id } = req.params;
-    const { width, height, format_id } = req.body;
+    const { width, height, format_id, is_active } = req.body;
     const measureExists = await prisma.measure.findUnique({
       where: { id: parseInt(id) },
     });
@@ -74,15 +100,32 @@ const updateMeasure = async (req, res) => {
         .status(404)
         .json({ status: "error", message: "Medida no encontrada" });
     }
+
+    const format = await prisma.format.findFirst({
+      where: {
+        id: Number(format_id),
+        is_active: true,
+      },
+    });
+
+    if (!format) {
+      return res.status(400).json({
+        status: "error",
+        message: "El formato seleccionado no existe o está inactivo",
+      });
+    }
+
     const measure = await prisma.measure.update({
       where: { id: parseInt(id) },
       data: {
         width,
         height,
+        is_active: normalizeIsActive(is_active, measureExists.is_active),
         format: {
           connect: { id: format_id },
         },
       },
+      include: measureInclude,
     });
     res.status(200).json({
       status: "success",
@@ -109,28 +152,18 @@ const deleteMeasure = async (req, res) => {
         message: "Medida no encontrada",
       });
     }
-    const ordersCount = await prisma.header_Production_Order.count({
-      where: { measure_id: parseInt(id) },
-    });
-
-    if (ordersCount > 0) {
-      return res.status(400).json({
-        status: "error",
-        message: `No se puede eliminar, tiene ${ordersCount} órdenes de producción asociadas`,
-      });
-    }
-
-    await prisma.measure.delete({
+    await prisma.measure.update({
       where: { id: parseInt(id) },
+      data: { is_active: false },
     });
     res.status(200).json({
       status: "success",
-      message: "Medida eliminada exitosamente",
+      message: "Medida desactivada exitosamente",
     });
   } catch (error) {
     res.status(500).json({
       status: "error",
-      message: "Error al eliminar la medida",
+      message: "Error al desactivar la medida",
     });
   }
 };

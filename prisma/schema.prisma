@@ -275,6 +275,7 @@ model Header_Production_Order {
   date                    DateTime     @default(now())
   date_delivery_estimated DateTime
   order_status            Order_Status @default(PENDIENTE)
+  is_active               Boolean      @default(true)
 
   amount_sheets  Int
   total_estimated Int

@@ -24,11 +24,16 @@ export const verifyToken = async (req, res, next) => {
         email: true,
         role: true,
         avatar: true,
+        is_active: true,
       },
     });
 
     if (!user) {
       return res.status(401).json({ message: "Usuario no encontrado" });
+    }
+
+    if (!user.is_active) {
+      return res.status(401).json({ message: "Usuario inactivo" });
     }
 
     req.user = user;

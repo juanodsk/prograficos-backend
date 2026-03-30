@@ -1,4 +1,5 @@
 import { prisma } from "../config/db.js";
+import { buildActiveWhere, normalizeIsActive } from "../utils/active.js";
 
 const buildFieldDefinitionsData = (fieldDefinitions = []) =>
   fieldDefinitions.map((field, index) => ({
@@ -12,13 +13,14 @@ const buildFieldDefinitionsData = (fieldDefinitions = []) =>
 
 const createProcess = async (req, res) => {
   try {
-    const { name, order, category, field_definitions = [] } = req.body;
+    const { name, order, category, is_active, field_definitions = [] } = req.body;
 
     const process = await prisma.process.create({
       data: {
         name,
         order,
         category,
+        is_active: normalizeIsActive(is_active, true),
         field_definitions: field_definitions.length
           ? {
               create: buildFieldDefinitionsData(field_definitions),
@@ -49,6 +51,7 @@ const createProcess = async (req, res) => {
 const getProcesses = async (req, res) => {
   try {
     const processes = await prisma.process.findMany({
+      where: buildActiveWhere(req.query),
       include: {
         field_definitions: {
           orderBy: { sort_order: "asc" },
@@ -109,8 +112,19 @@ const getProcessById = async (req, res) => {
 const updateProcess = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, order, category, field_definitions = [] } = req.body;
+    const { name, order, category, is_active, field_definitions = [] } = req.body;
     const processId = parseInt(id, 10);
+    const existingProcess = await prisma.process.findUnique({
+      where: { id: processId },
+      select: { id: true, is_active: true },
+    });
+
+    if (!existingProcess) {
+      return res.status(404).json({
+        status: "error",
+        message: "Proceso no encontrado",
+      });
+    }
 
     const process = await prisma.$transaction(async (tx) => {
       await tx.process_Field_Definition.deleteMany({
@@ -125,6 +139,7 @@ const updateProcess = async (req, res) => {
           name,
           order,
           category,
+          is_active: normalizeIsActive(is_active, existingProcess.is_active),
           field_definitions: field_definitions.length
             ? {
                 create: buildFieldDefinitionsData(field_definitions),
@@ -158,32 +173,41 @@ const deleteProcess = async (req, res) => {
     const { id } = req.params;
     const processId = parseInt(id, 10);
 
-    const detailsCount = await prisma.detail_Production_Order.count({
-      where: { process_id: processId },
-    });
-
-    if (detailsCount > 0) {
+    if (Number.isNaN(processId)) {
       return res.status(400).json({
         status: "error",
-        message: `No se puede eliminar, tiene ${detailsCount} órdenes de producción asociadas`,
+        message: "El id del proceso no es válido",
       });
     }
 
-    await prisma.process.delete({
+    const existingProcess = await prisma.process.findUnique({
+      where: { id: processId },
+      select: { id: true },
+    });
+
+    if (!existingProcess) {
+      return res.status(404).json({
+        status: "error",
+        message: "Proceso no encontrado",
+      });
+    }
+
+    await prisma.process.update({
       where: {
         id: processId,
       },
+      data: { is_active: false },
     });
 
     res.status(200).json({
       status: "success",
-      message: "Proceso eliminado exitosamente",
+      message: "Proceso desactivado exitosamente",
     });
   } catch (error) {
     console.error(error);
     res.status(500).json({
       status: "error",
-      message: "Error al eliminar el proceso",
+      message: "Error al desactivar el proceso",
     });
   }
 };

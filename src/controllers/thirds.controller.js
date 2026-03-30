@@ -1,8 +1,9 @@
 import { prisma } from "../config/db.js";
+import { buildActiveWhere, normalizeIsActive } from "../utils/active.js";
 
 const createThirds = async (req, res) => {
   try {
-    const { name, email, address, type_person, company_name } = req.body;
+    const { name, email, address, type_person, company_name, is_active } = req.body;
     const thirdExists = await prisma.thirds.findUnique({
       where: { email },
     });
@@ -18,6 +19,7 @@ const createThirds = async (req, res) => {
         address,
         type_person,
         company_name,
+        is_active: normalizeIsActive(is_active, true),
       },
     });
     res.status(201).json({
@@ -33,7 +35,10 @@ const createThirds = async (req, res) => {
 };
 const getThirds = async (req, res) => {
   try {
-    const thirds = await prisma.thirds.findMany();
+    const thirds = await prisma.thirds.findMany({
+      where: buildActiveWhere(req.query),
+      orderBy: { name: "asc" },
+    });
     res.status(200).json({
       status: "success",
       message: "Terceros obtenidos exitosamente",
@@ -100,9 +105,10 @@ const updateThirds = async (req, res) => {
       data: { third },
     });
   } catch (error) {
-    res.json
-      .status(500)
-      .json({ status: "error", message: "Error al actualizar tercero" });
+    res.status(500).json({
+      status: "error",
+      message: "Error al actualizar tercero",
+    });
   }
 };
 const deleteThirds = async (req, res) => {
@@ -117,17 +123,18 @@ const deleteThirds = async (req, res) => {
         message: "Tercero no encontrado",
       });
     }
-    await prisma.thirds.delete({
+    await prisma.thirds.update({
       where: { id: parseInt(id) },
+      data: { is_active: false },
     });
     res.status(200).json({
       status: "success",
-      message: "Tercero eliminado exitosamente",
+      message: "Tercero desactivado exitosamente",
     });
   } catch (error) {
     res
       .status(500)
-      .json({ status: "error", message: "Error al eliminar tercero" });
+      .json({ status: "error", message: "Error al desactivar tercero" });
   }
 };
 

@@ -20,10 +20,15 @@ router.post(
 router.get(
   "/:id",
   verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
+  authorizeRoles("ADMIN", "SUPERVISOR", "EMPLOYEE", "USER"),
   getMeasureById,
 );
-router.get("/", verifyToken, authorizeRoles("ADMIN", "SUPERVISOR"), getMeasure);
+router.get(
+  "/",
+  verifyToken,
+  authorizeRoles("ADMIN", "SUPERVISOR", "EMPLOYEE", "USER"),
+  getMeasure,
+);
 router.put(
   "/:id",
   verifyToken,

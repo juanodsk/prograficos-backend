@@ -1,13 +1,15 @@
 import { prisma } from "../config/db.js";
+import { buildActiveWhere, normalizeIsActive } from "../utils/active.js";
 
 const createTroqueles = async (req, res) => {
   try {
-    const { elaboration_date, size, file } = req.body;
+    const { elaboration_date, size, file, is_active } = req.body;
     const troqueles = await prisma.troqueles.create({
       data: {
         elaboration_date,
         size,
         file,
+        is_active: normalizeIsActive(is_active, true),
       },
     });
     res.status(201).json({
@@ -24,7 +26,10 @@ const createTroqueles = async (req, res) => {
 };
 const getTroqueles = async (req, res) => {
   try {
-    const troqueles = await prisma.troqueles.findMany();
+    const troqueles = await prisma.troqueles.findMany({
+      where: buildActiveWhere(req.query),
+      orderBy: { elaboration_date: "desc" },
+    });
     res.status(200).json({
       status: "success",
       message: "Troqueles obtenidos exitosamente",
@@ -52,13 +57,25 @@ const getTroquelesById = async (req, res) => {
 const updateTroqueles = async (req, res) => {
   try {
     const { id } = req.params;
-    const { elaboration_date, size, file } = req.body;
+    const { elaboration_date, size, file, is_active } = req.body;
+    const troquelExists = await prisma.troqueles.findUnique({
+      where: { id: parseInt(id) },
+    });
+
+    if (!troquelExists) {
+      return res.status(404).json({
+        status: "error",
+        message: "Troquel no encontrado",
+      });
+    }
+
     const troquel = await prisma.troqueles.update({
       where: { id: parseInt(id) },
       data: {
         elaboration_date,
         size,
         file,
+        is_active: normalizeIsActive(is_active, troquelExists.is_active),
       },
     });
     res.status(200).json({
@@ -75,28 +92,29 @@ const updateTroqueles = async (req, res) => {
 const deleteTroqueles = async (req, res) => {
   try {
     const { id } = req.params;
-    const ordersCount = await prisma.header_Production_Order.count({
-      where: { paper_type_id: parseInt(id) },
+    const troquelExists = await prisma.troqueles.findUnique({
+      where: { id: parseInt(id) },
     });
 
-    if (ordersCount > 0) {
-      return res.status(400).json({
+    if (!troquelExists) {
+      return res.status(404).json({
         status: "error",
-        message: `No se puede eliminar, tiene ${ordersCount} órdenes de producción asociadas`,
+        message: "Troquel no encontrado",
       });
     }
 
-    const troquel = await prisma.troqueles.delete({
+    const troquel = await prisma.troqueles.update({
       where: { id: parseInt(id) },
+      data: { is_active: false },
     });
 
     res.status(200).json({
       status: "success",
-      message: "Troquel eliminado exitosamente",
+      message: "Troquel desactivado exitosamente",
       data: troquel,
     });
   } catch (error) {
-    res.json({ status: "error", message: "Error al eliminar troquel" });
+    res.status(500).json({ status: "error", message: "Error al desactivar troquel" });
   }
 };
 

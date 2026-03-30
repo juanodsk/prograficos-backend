@@ -1,4 +1,5 @@
 import { prisma } from "../config/db.js";
+import { emitProductionChange } from "../utils/realtime.js";
 
 const orderProcessInclude = {
   process: {
@@ -34,6 +35,7 @@ const orderProcessInclude = {
   header_order: {
     select: {
       id: true,
+      is_active: true,
       order_status: true,
       date: true,
       date_delivery_estimated: true,
@@ -127,8 +129,11 @@ const getOrderProcesses = async (req, res) => {
       });
     }
 
-    const order = await prisma.header_Production_Order.findUnique({
-      where: { id: orderId },
+    const order = await prisma.header_Production_Order.findFirst({
+      where: {
+        id: orderId,
+        is_active: true,
+      },
     });
 
     if (!order) {
@@ -178,7 +183,7 @@ const getOrderProcessById = async (req, res) => {
       include: orderProcessInclude,
     });
 
-    if (!detail) {
+    if (!detail || !detail.header_order?.is_active) {
       return res.status(404).json({
         status: "error",
         message: "Proceso de la orden no encontrado",
@@ -232,6 +237,13 @@ const startOrderProcess = async (req, res) => {
       });
     }
 
+    if (!detail.header_order?.is_active) {
+      return res.status(400).json({
+        status: "error",
+        message: "La orden de este proceso está inactiva",
+      });
+    }
+
     if (detail.process_state === "TERMINADO") {
       return res.status(400).json({
         status: "error",
@@ -239,28 +251,41 @@ const startOrderProcess = async (req, res) => {
       });
     }
 
+    if (detail.process_state === "EN_PROCESO") {
+      return res.status(400).json({
+        status: "error",
+        message: "Este proceso ya fue iniciado y no permite cambiar los datos de entrada",
+      });
+    }
+
     if (machinery_id) {
-      const machinery = await prisma.machinery.findUnique({
-        where: { id: Number(machinery_id) },
+      const machinery = await prisma.machinery.findFirst({
+        where: {
+          id: Number(machinery_id),
+          is_active: true,
+        },
       });
 
       if (!machinery) {
         return res.status(400).json({
           status: "error",
-          message: "La maquinaria seleccionada no existe",
+          message: "La maquinaria seleccionada no existe o está inactiva",
         });
       }
     }
 
     if (measure_cutting_id) {
-      const measure = await prisma.measure.findUnique({
-        where: { id: Number(measure_cutting_id) },
+      const measure = await prisma.measure.findFirst({
+        where: {
+          id: Number(measure_cutting_id),
+          is_active: true,
+        },
       });
 
       if (!measure) {
         return res.status(400).json({
           status: "error",
-          message: "La medida de corte seleccionada no existe",
+          message: "La medida de corte seleccionada no existe o está inactiva",
         });
       }
     }
@@ -301,6 +326,12 @@ const startOrderProcess = async (req, res) => {
       status: "success",
       message: "Proceso iniciado exitosamente",
       data: updatedDetail,
+    });
+    emitProductionChange(req, "process:started", {
+      detailId: updatedDetail.id,
+      orderId: updatedDetail.header_order?.id || detail.header_order_id,
+      processState: updatedDetail.process_state,
+      processName: updatedDetail.process?.name,
     });
   } catch (error) {
     console.error(error);
@@ -363,6 +394,21 @@ const finishOrderProcess = async (req, res) => {
       });
     }
 
+    const headerOrder = await prisma.header_Production_Order.findFirst({
+      where: {
+        id: detail.header_order_id,
+        is_active: true,
+      },
+      select: { id: true },
+    });
+
+    if (!headerOrder) {
+      return res.status(400).json({
+        status: "error",
+        message: "La orden de este proceso está inactiva",
+      });
+    }
+
     if (detail.process_state === "TERMINADO") {
       return res.status(400).json({
         status: "error",
@@ -370,28 +416,48 @@ const finishOrderProcess = async (req, res) => {
       });
     }
 
+    const hasInputDataChanges =
+      machinery_id != null ||
+      measure_cutting_id != null ||
+      observations != null ||
+      (Array.isArray(field_values) && field_values.length > 0);
+
+    if (detail.process_state !== "PENDIENTE" && hasInputDataChanges) {
+      return res.status(400).json({
+        status: "error",
+        message:
+          "Los datos de entrada no se pueden modificar después de iniciar el proceso",
+      });
+    }
+
     if (machinery_id) {
-      const machinery = await prisma.machinery.findUnique({
-        where: { id: Number(machinery_id) },
+      const machinery = await prisma.machinery.findFirst({
+        where: {
+          id: Number(machinery_id),
+          is_active: true,
+        },
       });
 
       if (!machinery) {
         return res.status(400).json({
           status: "error",
-          message: "La maquinaria seleccionada no existe",
+          message: "La maquinaria seleccionada no existe o está inactiva",
         });
       }
     }
 
     if (measure_cutting_id) {
-      const measure = await prisma.measure.findUnique({
-        where: { id: Number(measure_cutting_id) },
+      const measure = await prisma.measure.findFirst({
+        where: {
+          id: Number(measure_cutting_id),
+          is_active: true,
+        },
       });
 
       if (!measure) {
         return res.status(400).json({
           status: "error",
-          message: "La medida de corte seleccionada no existe",
+          message: "La medida de corte seleccionada no existe o está inactiva",
         });
       }
     }
@@ -436,6 +502,12 @@ const finishOrderProcess = async (req, res) => {
       status: "success",
       message: "Proceso finalizado exitosamente",
       data: updatedDetail,
+    });
+    emitProductionChange(req, "process:finished", {
+      detailId: updatedDetail.id,
+      orderId: updatedDetail.header_order?.id || detail.header_order_id,
+      processState: updatedDetail.process_state,
+      processName: updatedDetail.process?.name,
     });
   } catch (error) {
     console.error(error);
