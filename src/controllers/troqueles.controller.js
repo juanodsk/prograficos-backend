@@ -1,11 +1,14 @@
 import { prisma } from "../config/db.js";
 import multer from "multer";
+import { buildActiveWhere, normalizeIsActive } from "../utils/active.js";
 
-// Configuración de multer para archivos en memoria (20MB máximo)
+// Configuracion de multer para archivos en memoria (20MB maximo)
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024 },
 });
+
+const parseTroquelId = (id) => parseInt(id, 10);
 
 // ───────────── CREAR TROQUEL ─────────────
 const createTroqueles = async (req, res) => {
@@ -13,13 +16,22 @@ const createTroqueles = async (req, res) => {
     const { elaboration_date, size, is_active } = req.body;
     const file = req.file;
 
+    if (!file) {
+      return res.status(400).json({
+        status: "error",
+        message: "Debes adjuntar un archivo para crear el troquel",
+      });
+    }
+
     const troquel = await prisma.troqueles.create({
       data: {
-        elaboration_date: new Date(elaboration_date),
+        elaboration_date: elaboration_date
+          ? new Date(elaboration_date)
+          : new Date(),
         size,
-        is_active: is_active === "true",
-        file: file?.buffer.toString("base64") || null, // Base64
-        file_name: file?.originalname || null, // Nombre original
+        is_active: normalizeIsActive(is_active, true),
+        file: file.buffer.toString("base64"),
+        file_name: file.originalname || null,
       },
     });
 
@@ -44,6 +56,7 @@ const getTroqueles = async (req, res) => {
       where: buildActiveWhere(req.query),
       orderBy: { elaboration_date: "desc" },
     });
+
     res.status(200).json({
       status: "success",
       message: "Troqueles obtenidos exitosamente",
@@ -51,24 +64,34 @@ const getTroqueles = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    res
-      .status(500)
-      .json({ status: "error", message: "Error al obtener troqueles" });
+    res.status(500).json({
+      status: "error",
+      message: "Error al obtener troqueles",
+    });
   }
 };
 
 // ───────────── OBTENER TROQUEL POR ID ─────────────
 const getTroquelesById = async (req, res) => {
   try {
-    const { id } = req.params;
+    const troquelId = parseTroquelId(req.params.id);
+
+    if (Number.isNaN(troquelId)) {
+      return res.status(400).json({
+        status: "error",
+        message: "El id del troquel no es valido",
+      });
+    }
+
     const troquel = await prisma.troqueles.findUnique({
-      where: { id: parseInt(id) },
+      where: { id: troquelId },
     });
 
     if (!troquel) {
-      return res
-        .status(404)
-        .json({ status: "error", message: "Troquel no encontrado" });
+      return res.status(404).json({
+        status: "error",
+        message: "Troquel no encontrado",
+      });
     }
 
     res.status(200).json({
@@ -78,33 +101,52 @@ const getTroquelesById = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    res
-      .status(500)
-      .json({ status: "error", message: "Error al obtener troquel" });
+    res.status(500).json({
+      status: "error",
+      message: "Error al obtener troquel",
+    });
   }
 };
 
 // ───────────── ACTUALIZAR TROQUEL ─────────────
 const updateTroqueles = async (req, res) => {
   try {
-    const { id } = req.params;
+    const troquelId = parseTroquelId(req.params.id);
     const { elaboration_date, size, is_active } = req.body;
 
-    // Preparar datos a actualizar
-    let dataToUpdate = {
-      elaboration_date: new Date(elaboration_date),
-      size,
-      is_active: is_active === "true",
+    if (Number.isNaN(troquelId)) {
+      return res.status(400).json({
+        status: "error",
+        message: "El id del troquel no es valido",
+      });
+    }
+
+    const troquelExists = await prisma.troqueles.findUnique({
+      where: { id: troquelId },
+    });
+
+    if (!troquelExists) {
+      return res.status(404).json({
+        status: "error",
+        message: "Troquel no encontrado",
+      });
+    }
+
+    const dataToUpdate = {
+      elaboration_date: elaboration_date
+        ? new Date(elaboration_date)
+        : troquelExists.elaboration_date,
+      size: size || troquelExists.size,
+      is_active: normalizeIsActive(is_active, troquelExists.is_active),
     };
 
-    // Si hay archivo nuevo, actualizar Base64 y nombre
     if (req.file) {
       dataToUpdate.file = req.file.buffer.toString("base64");
-      dataToUpdate.file_name = req.file.originalname;
+      dataToUpdate.file_name = req.file.originalname || troquelExists.file_name;
     }
 
     const troquel = await prisma.troqueles.update({
-      where: { id: parseInt(id) },
+      where: { id: troquelId },
       data: dataToUpdate,
     });
 
@@ -125,10 +167,17 @@ const updateTroqueles = async (req, res) => {
 // ───────────── ELIMINAR TROQUEL ─────────────
 const deleteTroqueles = async (req, res) => {
   try {
-    const { id } = req.params;
+    const troquelId = parseTroquelId(req.params.id);
 
-    const ordersCount = await prisma.header_Production_Order.count({
-      where: { paper_type_id: parseInt(id) },
+    if (Number.isNaN(troquelId)) {
+      return res.status(400).json({
+        status: "error",
+        message: "El id del troquel no es valido",
+      });
+    }
+
+    const troquelExists = await prisma.troqueles.findUnique({
+      where: { id: troquelId },
     });
 
     if (!troquelExists) {
@@ -138,8 +187,23 @@ const deleteTroqueles = async (req, res) => {
       });
     }
 
+    const ordersCount = await prisma.header_Production_Order.count({
+      where: {
+        troquel_id: troquelId,
+        is_active: true,
+      },
+    });
+
+    if (ordersCount > 0) {
+      return res.status(400).json({
+        status: "error",
+        message:
+          "No se puede desactivar el troquel porque tiene ordenes activas asociadas",
+      });
+    }
+
     const troquel = await prisma.troqueles.update({
-      where: { id: parseInt(id) },
+      where: { id: troquelId },
       data: { is_active: false },
     });
 
@@ -150,9 +214,10 @@ const deleteTroqueles = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    res
-      .status(500)
-      .json({ status: "error", message: "Error al eliminar troquel" });
+    res.status(500).json({
+      status: "error",
+      message: "Error al eliminar troquel",
+    });
   }
 };
 
@@ -162,5 +227,5 @@ export {
   getTroquelesById,
   updateTroqueles,
   deleteTroqueles,
-  upload, // Exportamos multer para usarlo en las rutas
+  upload,
 };
