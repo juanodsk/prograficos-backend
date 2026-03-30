@@ -2,7 +2,6 @@ import express from "express";
 import http from "http";
 import morgan from "morgan";
 import { config } from "dotenv";
-import { Server } from "socket.io";
 import { connectDB, disconnectDB } from "./config/db.js";
 import cookieParser from "cookie-parser";
 import cors from "cors";
@@ -61,10 +60,23 @@ const corsOptions = {
   credentials: true,
 };
 
-const io = new Server(server, {
-  cors: corsOptions,
-  path: socketPath,
-});
+const createSocketServer = async () => {
+  try {
+    const { Server } = await import("socket.io");
+    return new Server(server, {
+      cors: corsOptions,
+      path: socketPath,
+    });
+  } catch (error) {
+    console.warn(
+      "Socket.IO no está disponible en este entorno. El servidor seguirá funcionando sin eventos en tiempo real.",
+    );
+    console.warn(error?.message || error);
+    return null;
+  }
+};
+
+const io = await createSocketServer();
 
 app.use(cors(corsOptions));
 app.use(express.json());
@@ -77,13 +89,15 @@ app.use((req, _res, next) => {
   next();
 });
 
-io.on("connection", (socket) => {
-  console.log(`Socket conectado: ${socket.id}`);
+if (io) {
+  io.on("connection", (socket) => {
+    console.log(`Socket conectado: ${socket.id}`);
 
-  socket.on("disconnect", () => {
-    console.log(`Socket desconectado: ${socket.id}`);
+    socket.on("disconnect", () => {
+      console.log(`Socket desconectado: ${socket.id}`);
+    });
   });
-});
+}
 
 app.use("/users", userRoutes);
 app.use("/auth", authRoutes);
@@ -101,7 +115,9 @@ app.use("/order-processes", orderProcessRoutes);
 
 server.listen(port, () => {
   console.log(`Server running on port ${port} 🚀`);
-  console.log(`Socket.IO path: ${socketPath}`);
+  if (io) {
+    console.log(`Socket.IO path: ${socketPath}`);
+  }
 });
 
 process.on("unhandledRejection", (err) => {
