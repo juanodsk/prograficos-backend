@@ -80,9 +80,10 @@ const io = await createSocketServer();
 
 app.use(cors(corsOptions));
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 app.use(morgan("dev"));
 app.use(cookieParser());
+app.use(express.json({ limit: "50mb" })); // suficiente para Base64 grande, si realmente quieres seguir usando JSON
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 app.use((req, _res, next) => {
   req.io = io;
