@@ -1,11 +1,12 @@
 import express from "express";
+import http from "http";
 import morgan from "morgan";
 import { config } from "dotenv";
+import { Server } from "socket.io";
 import { connectDB, disconnectDB } from "./config/db.js";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 
-//IMPORT ROUTES//
 import userRoutes from "./routes/user.routes.js";
 import authRoutes from "./routes/auth.routes.js";
 import measureRoutes from "./routes/measures.routes.js";
@@ -20,44 +21,71 @@ import machineryRoutes from "./routes/machinery.routes.js";
 import orderRoutes from "./routes/order.routes.js";
 import orderProcessRoutes from "./routes/order_process.routes.js";
 
-// SERVER CONFIGURATION//
-
 config();
+
+const parseAllowedOrigins = () => {
+  const envOrigins = process.env.CORS_ALLOWED_ORIGINS
+    ?.split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  if (envOrigins?.length) return envOrigins;
+
+  return [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "https://prograficos.opita.dev",
+  ];
+};
+
+const allowedOrigins = parseAllowedOrigins();
+const socketPath = process.env.SOCKET_IO_PATH || "/socket.io";
+const port = Number(process.env.PORT || 5001);
+
 connectDB();
+
 const app = express();
-const allowedOrigins = [
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "https://prograficos.opita.dev",
-];
+const server = http.createServer(app);
 
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      if (!origin) return callback(null, true);
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin) return callback(null, true);
 
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
 
-      console.log("CORS bloqueado:", origin);
+    console.log("CORS bloqueado:", origin);
+    return callback(new Error("No permitido por CORS"));
+  },
+  credentials: true,
+};
 
-      return callback(new Error("No permitido por CORS"));
-    },
-    credentials: true,
-  }),
-);
+const io = new Server(server, {
+  cors: corsOptions,
+  path: socketPath,
+});
 
-const PORT = 5001;
-
-//BODY PARSING MIDDLEWARES//
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(morgan("dev"));
 app.use(cookieParser());
 app.use(express.json({ limit: "50mb" })); // suficiente para Base64 grande, si realmente quieres seguir usando JSON
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
-//API ROUTES//
+app.use((req, _res, next) => {
+  req.io = io;
+  next();
+});
+
+io.on("connection", (socket) => {
+  console.log(`Socket conectado: ${socket.id}`);
+
+  socket.on("disconnect", () => {
+    console.log(`Socket desconectado: ${socket.id}`);
+  });
+});
+
 app.use("/users", userRoutes);
 app.use("/auth", authRoutes);
 app.use("/measures", measureRoutes);
@@ -72,12 +100,11 @@ app.use("/machinery", machineryRoutes);
 app.use("/order", orderRoutes);
 app.use("/order-processes", orderProcessRoutes);
 
-//PORT LISTENING//
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT} 🚀`);
+server.listen(port, () => {
+  console.log(`Server running on port ${port} 🚀`);
+  console.log(`Socket.IO path: ${socketPath}`);
 });
 
-// Handle unhandled promise rejections (e.g., database connection errors)
 process.on("unhandledRejection", (err) => {
   console.error("Unhandled Rejection:", err);
   server.close(async () => {
@@ -86,14 +113,12 @@ process.on("unhandledRejection", (err) => {
   });
 });
 
-// Handle uncaught exceptions
 process.on("uncaughtException", async (err) => {
   console.error("Uncaught Exception:", err);
   await disconnectDB();
   process.exit(1);
 });
 
-// Graceful shutdown
 process.on("SIGTERM", async () => {
   console.log("SIGTERM received, shutting down gracefully");
   server.close(async () => {

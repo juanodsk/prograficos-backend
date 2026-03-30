@@ -58,6 +58,11 @@ const login = async (req, res) => {
   if (!user) {
     return res.status(401).json({ message: "Email o contraseña incorrectos" });
   }
+
+  if (!user.is_active) {
+    return res.status(401).json({ message: "Tu usuario está inactivo" });
+  }
+
   //VERIFY PASSWORD//
   const isPasswordValid = await bcrypt.compare(password, user.password);
   if (!isPasswordValid) {
@@ -106,11 +111,17 @@ const profile = async (req, res) => {
         email: true,
         role: true,
         avatar: true,
+        is_active: true,
       },
     });
     if (!user) {
       return res.status(404).json({ message: "Usuario no encontrado" });
     }
+
+    if (!user.is_active) {
+      return res.status(401).json({ message: "Usuario inactivo" });
+    }
+
     res.status(200).json({
       status: "success",
       data: { user },

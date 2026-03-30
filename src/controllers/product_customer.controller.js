@@ -1,19 +1,32 @@
 import { prisma } from "../config/db.js";
+import { buildActiveWhere, normalizeIsActive } from "../utils/active.js";
 
 const createProductCustomer = async (req, res) => {
   try {
-    const { name, product_id, third_id } = req.body;
-    const thirdExists = await prisma.thirds.findUnique({
-      where: { id: third_id },
+    const { name, product_id, third_id, is_active } = req.body;
+    const thirdExists = await prisma.thirds.findFirst({
+      where: {
+        id: third_id,
+        is_active: true,
+      },
     });
-    const productExists = await prisma.product.findUnique({
-      where: { id: product_id },
+    const productExists = await prisma.product.findFirst({
+      where: {
+        id: product_id,
+        is_active: true,
+      },
     });
     if (!thirdExists) {
-      return res.status(404).json({ error: "Tercero no existe!" });
+      return res.status(404).json({
+        status: "error",
+        message: "El tercero no existe o está inactivo",
+      });
     }
     if (!productExists) {
-      return res.status(404).json({ error: "Producto no existe!" });
+      return res.status(404).json({
+        status: "error",
+        message: "El producto no existe o está inactivo",
+      });
     }
 
     const productCustomer = await prisma.product_Customer.create({
@@ -21,6 +34,7 @@ const createProductCustomer = async (req, res) => {
         name,
         product_id,
         third_id,
+        is_active: normalizeIsActive(is_active, true),
       },
     });
     res.status(201).json({
@@ -45,7 +59,10 @@ const getProductCustomer = async (req, res) => {
     if (!productCustomer) {
       return res
         .status(404)
-        .json({ error: "Producto del cliente no encontrado!" });
+        .json({
+          status: "error",
+          message: "Producto del cliente no encontrado",
+        });
     }
     res.status(200).json({
       status: "success",
@@ -62,7 +79,10 @@ const getProductCustomer = async (req, res) => {
 };
 const getProductCustomers = async (req, res) => {
   try {
-    const productCustomers = await prisma.product_Customer.findMany();
+    const productCustomers = await prisma.product_Customer.findMany({
+      where: buildActiveWhere(req.query),
+      orderBy: { name: "asc" },
+    });
     res.status(200).json({
       status: "success",
       message: "Productos de clientes obtenidos exitosamente",
@@ -79,18 +99,41 @@ const getProductCustomers = async (req, res) => {
 const updateProductCustomer = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, product_id, third_id } = req.body;
-    const thirdExists = await prisma.thirds.findUnique({
-      where: { id: third_id },
+    const { name, product_id, third_id, is_active } = req.body;
+    const existingProductCustomer = await prisma.product_Customer.findUnique({
+      where: { id: parseInt(id) },
     });
-    const productExists = await prisma.product.findUnique({
-      where: { id: product_id },
+
+    if (!existingProductCustomer) {
+      return res.status(404).json({
+        status: "error",
+        message: "Producto del cliente no encontrado",
+      });
+    }
+
+    const thirdExists = await prisma.thirds.findFirst({
+      where: {
+        id: third_id,
+        is_active: true,
+      },
+    });
+    const productExists = await prisma.product.findFirst({
+      where: {
+        id: product_id,
+        is_active: true,
+      },
     });
     if (!thirdExists) {
-      return res.status(404).json({ error: "Tercero no existe!" });
+      return res.status(404).json({
+        status: "error",
+        message: "El tercero no existe o está inactivo",
+      });
     }
     if (!productExists) {
-      return res.status(404).json({ error: "Producto no existe!" });
+      return res.status(404).json({
+        status: "error",
+        message: "El producto no existe o está inactivo",
+      });
     }
     const productCustomer = await prisma.product_Customer.update({
       where: { id: parseInt(id) },
@@ -98,6 +141,7 @@ const updateProductCustomer = async (req, res) => {
         name,
         product_id,
         third_id,
+        is_active: normalizeIsActive(is_active, existingProductCustomer.is_active),
       },
     });
     res.status(200).json({
@@ -115,29 +159,30 @@ const updateProductCustomer = async (req, res) => {
 const deleteProductCustomer = async (req, res) => {
   try {
     const { id } = req.params;
-    const ordersCount = await prisma.header_Production_Order.count({
-      where: { product_customer_id: parseInt(id) },
+    const existingProductCustomer = await prisma.product_Customer.findUnique({
+      where: { id: parseInt(id) },
     });
 
-    if (ordersCount > 0) {
-      return res.status(400).json({
+    if (!existingProductCustomer) {
+      return res.status(404).json({
         status: "error",
-        message: `No se puede eliminar, tiene ${ordersCount} órdenes de producción asociadas`,
+        message: "Producto del cliente no encontrado",
       });
     }
 
-    const productCustomer = await prisma.product_Customer.delete({
+    const productCustomer = await prisma.product_Customer.update({
       where: { id: parseInt(id) },
+      data: { is_active: false },
     });
     res.status(200).json({
       status: "success",
-      message: "Producto de cliente eliminado exitosamente",
+      message: "Producto de cliente desactivado exitosamente",
       data: productCustomer,
     });
   } catch (error) {
     res.status(500).json({
       status: "error",
-      message: "Error al eliminar Producto de cliente",
+      message: "Error al desactivar Producto de cliente",
     });
   }
 };

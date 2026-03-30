@@ -1,4 +1,5 @@
 import { prisma } from "../config/db.js";
+import { emitProductionChange } from "../utils/realtime.js";
 
 const orderInclude = {
   product_customer: {
@@ -7,7 +8,11 @@ const orderInclude = {
       product: true,
     },
   },
-  measure: true,
+  measure: {
+    include: {
+      format: true,
+    },
+  },
   paper_type: true,
   troquel: true,
   user: {
@@ -97,37 +102,56 @@ const validateOrderPayload = async ({
 
   const [measure, paperType, troquel, productCustomer, existingProcesses] =
     await Promise.all([
-      prisma.measure.findUnique({ where: { id: Number(measure_id) } }),
-      prisma.paper_Type.findUnique({ where: { id: Number(paper_type_id) } }),
-      prisma.troqueles.findUnique({ where: { id: Number(troquel_id) } }),
-      prisma.product_Customer.findUnique({
-        where: { id: Number(product_customer_id) },
+      prisma.measure.findFirst({
+        where: {
+          id: Number(measure_id),
+          is_active: true,
+        },
+      }),
+      prisma.paper_Type.findFirst({
+        where: {
+          id: Number(paper_type_id),
+          is_active: true,
+        },
+      }),
+      prisma.troqueles.findFirst({
+        where: {
+          id: Number(troquel_id),
+          is_active: true,
+        },
+      }),
+      prisma.product_Customer.findFirst({
+        where: {
+          id: Number(product_customer_id),
+          is_active: true,
+        },
       }),
       prisma.process.findMany({
         where: {
           id: { in: processIds },
+          is_active: true,
         },
       }),
     ]);
 
   if (!measure) {
-    return "La medida seleccionada no existe";
+    return "La medida seleccionada no existe o está inactiva";
   }
 
   if (!paperType) {
-    return "El tipo de papel seleccionado no existe";
+    return "El tipo de papel seleccionado no existe o está inactivo";
   }
 
   if (!troquel) {
-    return "El troquel seleccionado no existe";
+    return "El troquel seleccionado no existe o está inactivo";
   }
 
   if (!productCustomer) {
-    return "El producto del cliente seleccionado no existe";
+    return "El producto del cliente seleccionado no existe o está inactivo";
   }
 
   if (existingProcesses.length !== processIds.length) {
-    return "Uno o más procesos seleccionados no existen";
+    return "Uno o más procesos seleccionados no existen o están inactivos";
   }
 
   return null;
@@ -192,6 +216,10 @@ const createOrder = async (req, res) => {
       message: "Orden creada exitosamente",
       data: order,
     });
+    emitProductionChange(req, "order:created", {
+      orderId: order.id,
+      orderStatus: order.order_status,
+    });
   } catch (error) {
     console.log(error);
     res.status(500).json({
@@ -204,6 +232,7 @@ const createOrder = async (req, res) => {
 const getOrders = async (req, res) => {
   try {
     const orders = await prisma.header_Production_Order.findMany({
+      where: { is_active: true },
       include: orderInclude,
       orderBy: { date: "desc" },
     });
@@ -232,8 +261,11 @@ const getOrderById = async (req, res) => {
       });
     }
 
-    const order = await prisma.header_Production_Order.findUnique({
-      where: { id: orderId },
+    const order = await prisma.header_Production_Order.findFirst({
+      where: {
+        id: orderId,
+        is_active: true,
+      },
       include: orderInclude,
     });
 
@@ -269,8 +301,11 @@ const updateOrder = async (req, res) => {
       });
     }
 
-    const existingOrder = await prisma.header_Production_Order.findUnique({
-      where: { id: orderId },
+    const existingOrder = await prisma.header_Production_Order.findFirst({
+      where: {
+        id: orderId,
+        is_active: true,
+      },
       include: {
         detail_production_orders: true,
       },
@@ -280,6 +315,18 @@ const updateOrder = async (req, res) => {
       return res.status(404).json({
         status: "error",
         message: "Orden no encontrada",
+      });
+    }
+
+    const hasStartedProcesses = existingOrder.detail_production_orders.some(
+      (detail) => detail.process_state !== "PENDIENTE",
+    );
+
+    if (hasStartedProcesses) {
+      return res.status(400).json({
+        status: "error",
+        message:
+          "La orden no se puede editar porque ya tiene procesos iniciados o finalizados",
       });
     }
 
@@ -346,6 +393,10 @@ const updateOrder = async (req, res) => {
       message: "Orden actualizada exitosamente",
       data: updatedOrder,
     });
+    emitProductionChange(req, "order:updated", {
+      orderId: updatedOrder.id,
+      orderStatus: updatedOrder.order_status,
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({
@@ -366,10 +417,10 @@ const deleteOrder = async (req, res) => {
       });
     }
 
-    const existingOrder = await prisma.header_Production_Order.findUnique({
-      where: { id: orderId },
-      include: {
-        detail_production_orders: true,
+    const existingOrder = await prisma.header_Production_Order.findFirst({
+      where: {
+        id: orderId,
+        is_active: true,
       },
     });
 
@@ -380,16 +431,17 @@ const deleteOrder = async (req, res) => {
       });
     }
 
-    await prisma.$transaction(async (tx) => {
-      await deleteOrderDetailDependencies(tx, orderId);
-      await tx.header_Production_Order.delete({
-        where: { id: orderId },
-      });
+    await prisma.header_Production_Order.update({
+      where: { id: orderId },
+      data: { is_active: false },
     });
 
     res.status(200).json({
       status: "success",
-      message: "Orden eliminada exitosamente",
+      message: "Orden desactivada exitosamente",
+    });
+    emitProductionChange(req, "order:deleted", {
+      orderId,
     });
   } catch (error) {
     console.error(error);
@@ -411,8 +463,11 @@ const orderFinished = async (req, res) => {
       });
     }
 
-    const existingOrder = await prisma.header_Production_Order.findUnique({
-      where: { id: orderId },
+    const existingOrder = await prisma.header_Production_Order.findFirst({
+      where: {
+        id: orderId,
+        is_active: true,
+      },
     });
 
     if (!existingOrder) {
@@ -432,6 +487,10 @@ const orderFinished = async (req, res) => {
       status: "success",
       message: "Orden finalizada exitosamente",
       data: order,
+    });
+    emitProductionChange(req, "order:finished", {
+      orderId: order.id,
+      orderStatus: order.order_status,
     });
   } catch (error) {
     console.error(error);

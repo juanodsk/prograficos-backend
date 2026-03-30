@@ -15,13 +15,13 @@ router.get("/:id", verifyToken, getOrderProcessById);
 router.patch(
   "/:id/start",
   verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR", "EMPLOYEE"),
+  authorizeRoles("ADMIN", "SUPERVISOR", "EMPLOYEE", "USER"),
   startOrderProcess,
 );
 router.patch(
   "/:id/finish",
   verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR", "EMPLOYEE"),
+  authorizeRoles("ADMIN", "SUPERVISOR", "EMPLOYEE", "USER"),
   finishOrderProcess,
 );
 

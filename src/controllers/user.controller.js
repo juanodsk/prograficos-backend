@@ -4,9 +4,6 @@ import bcrypt from "bcryptjs";
 const getUsers = async (req, res) => {
   try {
     const users = await prisma.user.findMany({
-      where: {
-        is_active: true,
-      },
       select: {
         id: true,
         name: true,
@@ -14,8 +11,10 @@ const getUsers = async (req, res) => {
         email: true,
         role: true,
         avatar: true,
+        is_active: true,
         createdAt: true,
       },
+      orderBy: [{ is_active: "desc" }, { name: "asc" }, { surename: "asc" }],
     });
 
     res.json(users);
@@ -26,7 +25,7 @@ const getUsers = async (req, res) => {
 
 const createUser = async (req, res) => {
   try {
-    const { name, surename, email, password, role, avatar } = req.body;
+    const { name, surename, email, password, role, avatar, is_active } = req.body;
 
     // Solo ADMIN puede crear usuarios ADMIN
     if (role === "ADMIN" && req.user.role !== "ADMIN") {
@@ -40,18 +39,17 @@ const createUser = async (req, res) => {
       return res.status(400).json({ message: "Rol inválido" });
     }
 
-    // Verificar si el usuario ya existe (solo activos)
-    const userExists = await prisma.user.findFirst({
-      where: {
-        email,
-        is_active: true,
-      },
+    const userExists = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true, is_active: true },
     });
 
     if (userExists) {
-      return res
-        .status(400)
-        .json({ message: "Ya existe un usuario con este email" });
+      return res.status(400).json({
+        message: userExists.is_active
+          ? "Ya existe un usuario con este email"
+          : "Ya existe un usuario inactivo con este email. Reactívalo editando el registro existente",
+      });
     }
 
     const salt = await bcrypt.genSalt(10);
@@ -64,6 +62,7 @@ const createUser = async (req, res) => {
         email,
         password: hashedPassword,
         role: role || "USER",
+        is_active: is_active !== undefined ? Boolean(is_active) : true,
         ...(avatar && { avatar }),
       },
       select: {
@@ -73,6 +72,7 @@ const createUser = async (req, res) => {
         email: true,
         role: true,
         avatar: true,
+        is_active: true,
       },
     });
 
@@ -94,7 +94,6 @@ const getUserById = async (req, res) => {
     const user = await prisma.user.findFirst({
       where: {
         id: parseInt(id),
-        is_active: true,
       },
       select: {
         id: true,
@@ -103,6 +102,7 @@ const getUserById = async (req, res) => {
         email: true,
         role: true,
         avatar: true,
+        is_active: true,
       },
     });
 
@@ -122,12 +122,11 @@ const getUserById = async (req, res) => {
 const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, surename, email, password, role, avatar } = req.body;
+    const { name, surename, email, password, role, avatar, is_active } = req.body;
 
-    const userExists = await prisma.user.findFirst({
+    const userExists = await prisma.user.findUnique({
       where: {
         id: parseInt(id),
-        is_active: true,
       },
     });
 
@@ -178,6 +177,7 @@ const updateUser = async (req, res) => {
         ...(password && { password: hashedPassword }),
         ...(role && { role }),
         ...(avatar && { avatar }),
+        ...(is_active !== undefined && { is_active: Boolean(is_active) }),
       },
       select: {
         id: true,
@@ -186,6 +186,7 @@ const updateUser = async (req, res) => {
         email: true,
         role: true,
         avatar: true,
+        is_active: true,
         createdAt: true,
       },
     });

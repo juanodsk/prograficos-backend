@@ -1,10 +1,14 @@
 import { prisma } from "../config/db.js";
+import { buildActiveWhere, normalizeIsActive } from "../utils/active.js";
 
 const createFormat = async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, is_active } = req.body;
     const format = await prisma.format.create({
-      data: { name },
+      data: {
+        name,
+        is_active: normalizeIsActive(is_active, true),
+      },
     });
     res.status(201).json({
       status: "success",
@@ -20,7 +24,10 @@ const createFormat = async (req, res) => {
 };
 const getFormat = async (req, res) => {
   try {
-    const formats = await prisma.format.findMany();
+    const formats = await prisma.format.findMany({
+      where: buildActiveWhere(req.query),
+      orderBy: { name: "asc" },
+    });
     res.status(200).json({
       status: "success",
       data: formats,
@@ -72,7 +79,10 @@ const updateFormat = async (req, res) => {
     }
     const format = await prisma.format.update({
       where: { id: parseInt(id) },
-      data: { name, is_active },
+      data: {
+        name,
+        is_active: normalizeIsActive(is_active, formatExists.is_active),
+      },
     });
     res.status(200).json({
       status: "success",
@@ -93,22 +103,23 @@ const deleteFormat = async (req, res) => {
       where: { id: parseInt(id) },
     });
     if (!formatExists) {
-      return json({
+      return res.status(404).json({
         status: "error",
         message: "Formato no encontrado",
       });
     }
-    await prisma.format.delete({
+    await prisma.format.update({
       where: { id: parseInt(id) },
+      data: { is_active: false },
     });
     res.status(200).json({
       status: "success",
-      message: "Formato eliminado exitosamente",
+      message: "Formato desactivado exitosamente",
     });
   } catch (error) {
     res.status(500).json({
       status: "error",
-      message: "Error al eliminar el formato",
+      message: "Error al desactivar el formato",
     });
   }
 };

@@ -40,7 +40,10 @@ const createTroqueles = async (req, res) => {
 // ───────────── OBTENER TODOS LOS TROQUELES ─────────────
 const getTroqueles = async (req, res) => {
   try {
-    const troqueles = await prisma.troqueles.findMany();
+    const troqueles = await prisma.troqueles.findMany({
+      where: buildActiveWhere(req.query),
+      orderBy: { elaboration_date: "desc" },
+    });
     res.status(200).json({
       status: "success",
       message: "Troqueles obtenidos exitosamente",
@@ -128,20 +131,21 @@ const deleteTroqueles = async (req, res) => {
       where: { paper_type_id: parseInt(id) },
     });
 
-    if (ordersCount > 0) {
-      return res.status(400).json({
+    if (!troquelExists) {
+      return res.status(404).json({
         status: "error",
-        message: `No se puede eliminar, tiene ${ordersCount} órdenes de producción asociadas`,
+        message: "Troquel no encontrado",
       });
     }
 
-    const troquel = await prisma.troqueles.delete({
+    const troquel = await prisma.troqueles.update({
       where: { id: parseInt(id) },
+      data: { is_active: false },
     });
 
     res.status(200).json({
       status: "success",
-      message: "Troquel eliminado exitosamente",
+      message: "Troquel desactivado exitosamente",
       data: troquel,
     });
   } catch (error) {

@@ -21,13 +21,13 @@ router.post(
 router.get(
   "/",
   verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
+  authorizeRoles("ADMIN", "SUPERVISOR", "EMPLOYEE", "USER"),
   getMachinery,
 );
 router.get(
   "/:id",
   verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
+  authorizeRoles("ADMIN", "SUPERVISOR", "EMPLOYEE", "USER"),
   getMachineryById,
 );
 router.put(

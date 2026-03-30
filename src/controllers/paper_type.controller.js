@@ -1,4 +1,5 @@
 import { prisma } from "../config/db.js";
+import { buildActiveWhere, normalizeIsActive } from "../utils/active.js";
 
 const createPaperType = async (req, res) => {
   try {
@@ -8,7 +9,7 @@ const createPaperType = async (req, res) => {
         name,
         description,
         grammage,
-        is_active,
+        is_active: normalizeIsActive(is_active, true),
       },
     });
     res.status(201).json({
@@ -26,7 +27,10 @@ const createPaperType = async (req, res) => {
 };
 const getPaperType = async (req, res) => {
   try {
-    const paperTypes = await prisma.paper_Type.findMany();
+    const paperTypes = await prisma.paper_Type.findMany({
+      where: buildActiveWhere(req.query),
+      orderBy: { name: "asc" },
+    });
     res.status(200).json({
       status: "success",
       message: "Tipos de papel obtenidos exitosamente",
@@ -69,6 +73,17 @@ const updatePaperType = async (req, res) => {
   try {
     const { id } = req.params;
     const { name, description, grammage, is_active } = req.body;
+    const paperTypeExists = await prisma.paper_Type.findUnique({
+      where: { id: parseInt(id) },
+    });
+
+    if (!paperTypeExists) {
+      return res.status(404).json({
+        status: "error",
+        message: "Tipo de papel no encontrado",
+      });
+    }
+
     const paperType = await prisma.paper_Type.update({
       where: {
         id: parseInt(id),
@@ -77,7 +92,7 @@ const updatePaperType = async (req, res) => {
         name,
         description,
         grammage,
-        is_active,
+        is_active: normalizeIsActive(is_active, paperTypeExists.is_active),
       },
     });
     res.status(200).json({
@@ -95,30 +110,29 @@ const updatePaperType = async (req, res) => {
 const deletePaperType = async (req, res) => {
   try {
     const { id } = req.params;
-
-    // Verificar si tiene órdenes asociadas
-    const ordersCount = await prisma.header_Production_Order.count({
-      where: { paper_type_id: parseInt(id) },
+    const paperTypeExists = await prisma.paper_Type.findUnique({
+      where: { id: parseInt(id) },
     });
 
-    if (ordersCount > 0) {
-      return res.status(400).json({
+    if (!paperTypeExists) {
+      return res.status(404).json({
         status: "error",
-        message: `No se puede eliminar, tiene ${ordersCount} órdenes de producción asociadas`,
+        message: "Tipo de papel no encontrado",
       });
     }
 
-    await prisma.paper_Type.delete({
+    await prisma.paper_Type.update({
       where: { id: parseInt(id) },
+      data: { is_active: false },
     });
 
     res.status(200).json({
       status: "success",
-      message: "Tipo de papel eliminado exitosamente",
+      message: "Tipo de papel desactivado exitosamente",
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Error al eliminar el tipo de papel" });
+    res.status(500).json({ message: "Error al desactivar el tipo de papel" });
   }
 };
 

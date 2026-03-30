@@ -1,4 +1,5 @@
 import { prisma } from "../config/db.js";
+import { buildActiveWhere, normalizeIsActive } from "../utils/active.js";
 
 const createProduct = async (req, res) => {
   try {
@@ -61,7 +62,10 @@ const getProduct = async (req, res) => {
 };
 const getProducts = async (req, res) => {
   try {
-    const products = await prisma.product.findMany();
+    const products = await prisma.product.findMany({
+      where: buildActiveWhere(req.query),
+      orderBy: { name: "asc" },
+    });
     res.status(200).json({
       status: "success",
       data: { products },
@@ -128,20 +132,21 @@ const deleteProduct = async (req, res) => {
       });
     }
 
-    await prisma.product.delete({
+    await prisma.product.update({
       where: {
         id: parseInt(id),
       },
+      data: { is_active: false },
     });
 
     res.status(200).json({
       status: "success",
-      message: "Producto eliminado exitosamente",
+      message: "Producto desactivado exitosamente",
     });
   } catch (error) {
     res.status(500).json({
       status: "error",
-      message: "Error al eliminar el producto",
+      message: "Error al desactivar el producto",
     });
   }
 };
