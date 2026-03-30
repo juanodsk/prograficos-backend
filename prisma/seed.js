@@ -3,13 +3,179 @@ import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
+const processBlueprints = [
+  {
+    name: "Corte",
+    order: 1,
+    category: "CORTE",
+    fields: [
+      {
+        key: "tamano_corte",
+        label: "Tamano",
+        field_type: "TEXT",
+        is_required: true,
+      },
+      {
+        key: "tamano_entregado",
+        label: "Tamanos entregados",
+        field_type: "NUMBER",
+        is_required: false,
+      },
+    ],
+  },
+  {
+    name: "Impresión",
+    order: 2,
+    category: "IMPRESION",
+    fields: [
+      {
+        key: "numero_tintas",
+        label: "No. de tintas",
+        field_type: "NUMBER",
+        is_required: true,
+      },
+      {
+        key: "color_1",
+        label: "Color 1",
+        field_type: "TEXT",
+        is_required: true,
+      },
+      {
+        key: "color_2",
+        label: "Color 2",
+        field_type: "TEXT",
+        is_required: false,
+      },
+      {
+        key: "policromia",
+        label: "Policromia",
+        field_type: "BOOLEAN",
+        is_required: false,
+      },
+      {
+        key: "retiro",
+        label: "Retiro",
+        field_type: "BOOLEAN",
+        is_required: false,
+      },
+      {
+        key: "unid_impresion",
+        label: "Unid. impresion",
+        field_type: "NUMBER",
+        is_required: false,
+      },
+    ],
+  },
+  {
+    name: "Plastificado",
+    order: 3,
+    category: "ACABADO",
+    fields: [
+      {
+        key: "tipo_plastico",
+        label: "Tipo plastico",
+        field_type: "TEXT",
+        is_required: true,
+      },
+      {
+        key: "medida_plastico",
+        label: "Medida",
+        field_type: "TEXT",
+        is_required: false,
+      },
+      {
+        key: "unid_plastificado",
+        label: "Unid. plastificado",
+        field_type: "NUMBER",
+        is_required: false,
+      },
+    ],
+  },
+  {
+    name: "Troquelado",
+    order: 4,
+    category: "TROQUELADO",
+    fields: [
+      {
+        key: "codigo_troquel_aplicado",
+        label: "Codigo troquel aplicado",
+        field_type: "TEXT",
+        is_required: false,
+      },
+      {
+        key: "unid_troquelado",
+        label: "Unid. troquelado",
+        field_type: "NUMBER",
+        is_required: false,
+      },
+    ],
+  },
+  {
+    name: "Acabados Estampado",
+    order: 5,
+    category: "ACABADO",
+    fields: [
+      {
+        key: "color_estampado",
+        label: "Color",
+        field_type: "TEXT",
+        is_required: true,
+      },
+      {
+        key: "unid_estampado",
+        label: "Unid. estampado",
+        field_type: "NUMBER",
+        is_required: false,
+      },
+    ],
+  },
+  {
+    name: "Acabado de Pegado",
+    order: 6,
+    category: "PEGADO",
+    fields: [
+      {
+        key: "tipo_pegue",
+        label: "Tipo de pegue",
+        field_type: "TEXT",
+        is_required: false,
+      },
+      {
+        key: "unid_pegado",
+        label: "Unid. pegado",
+        field_type: "NUMBER",
+        is_required: false,
+      },
+    ],
+  },
+];
+
+async function syncProcessDefinitions(process, fields) {
+  await prisma.process_Field_Definition.deleteMany({
+    where: { process_id: process.id },
+  });
+
+  for (const [index, field] of fields.entries()) {
+    await prisma.process_Field_Definition.create({
+      data: {
+        process_id: process.id,
+        key: field.key,
+        label: field.label,
+        field_type: field.field_type,
+        is_required: Boolean(field.is_required),
+        sort_order: index + 1,
+        options: field.options ?? null,
+      },
+    });
+  }
+}
+
 async function main() {
   console.log("🌱 Iniciando seed...");
 
   const salt = await bcrypt.genSalt(10);
 
-  // ==================== USERS ====================
-  const admin = await prisma.user.upsert({
+  await prisma.user.upsert({
     where: { email: "admin@prograficos.com" },
     update: {},
     create: {
@@ -22,7 +188,7 @@ async function main() {
     },
   });
 
-  const supervisor = await prisma.user.upsert({
+  await prisma.user.upsert({
     where: { email: "supervisor@prograficos.com" },
     update: {},
     create: {
@@ -35,7 +201,7 @@ async function main() {
     },
   });
 
-  const operario = await prisma.user.upsert({
+  await prisma.user.upsert({
     where: { email: "operario@prograficos.com" },
     update: {},
     create: {
@@ -50,282 +216,207 @@ async function main() {
 
   console.log("✅ Users listos");
 
-  // ==================== TROQUELES ====================
-  const troquel1 = await prisma.troqueles.upsert({
-    where: { code: "Troquel 1" },
+  await prisma.troqueles.upsert({
+    where: { code: "BOX01" },
     update: {},
     create: {
-      code: "Troquel 1",
+      code: "BOX01",
       size: "MEDIUM",
-      file: "troquel1.pdf",
+      file: "box01.pdf",
       is_active: true,
     },
   });
 
-  const troquel2 = await prisma.troqueles.upsert({
-    where: { code: "Troquel 2" },
+  await prisma.troqueles.upsert({
+    where: { code: "M14" },
     update: {},
     create: {
-      code: "Troquel 2",
+      code: "M14",
       size: "LARGE",
-      file: "troquel2.pdf",
+      file: "m14.pdf",
       is_active: true,
     },
   });
 
   console.log("✅ Troqueles listos");
 
-  // ==================== PROCESSES ====================
-  const proceso1 = await prisma.process.upsert({
-    where: { name: "Impresión" },
+  for (const blueprint of processBlueprints) {
+    const process = await prisma.process.upsert({
+      where: { name: blueprint.name },
+      update: {
+        order: blueprint.order,
+        category: blueprint.category,
+        is_active: true,
+      },
+      create: {
+        name: blueprint.name,
+        order: blueprint.order,
+        category: blueprint.category,
+        is_active: true,
+      },
+    });
+
+    await syncProcessDefinitions(process, blueprint.fields);
+  }
+
+  console.log("✅ Procesos y campos configurables listos");
+
+  await prisma.machinery.upsert({
+    where: { reference: "GUI-01" },
     update: {},
     create: {
-      name: "Impresión",
-      order: 1,
-      use_troquel: false,
-      use_measure: true,
-      use_inks: true,
-      is_finished: false,
+      name: "Guillotina Polar",
+      reference: "GUI-01",
+      type: "CORTE",
       is_active: true,
     },
   });
 
-  const proceso2 = await prisma.process.upsert({
-    where: { name: "Troquelado" },
+  await prisma.machinery.upsert({
+    where: { reference: "HEI-74" },
     update: {},
     create: {
-      name: "Troquelado",
-      order: 2,
-      use_troquel: true,
-      use_measure: true,
-      use_inks: false,
-      is_finished: false,
-      is_active: true,
-    },
-  });
-
-  const proceso3 = await prisma.process.upsert({
-    where: { name: "Plastificado" },
-    update: {},
-    create: {
-      name: "Plastificado",
-      order: 3,
-      use_troquel: false,
-      use_measure: false,
-      use_inks: false,
-      is_finished: false,
-      is_active: true,
-    },
-  });
-
-  console.log("✅ Procesos listos");
-
-  // ==================== MACHINERY ====================
-  const maquina1 = await prisma.machinery.upsert({
-    where: { reference: "HCD-74" },
-    update: {},
-    create: {
-      name: "Heidelberg CD 74",
-      reference: "HCD-74",
+      name: "Heidelberg 74",
+      reference: "HEI-74",
       type: "IMPRESION",
       is_active: true,
     },
   });
 
-  const maquina2 = await prisma.machinery.upsert({
-    where: { reference: "TRQ-AUTO-01" },
+  await prisma.machinery.upsert({
+    where: { reference: "PLA-01" },
     update: {},
     create: {
-      name: "Troqueladora Autom.",
-      reference: "TRQ-AUTO-01",
-      type: "TROQUELADO",
+      name: "Plastificadora Termica",
+      reference: "PLA-01",
+      type: "PLASTIFICADO",
       is_active: true,
     },
   });
 
-  const maquina3 = await prisma.machinery.upsert({
-    where: { reference: "PLAST-01" },
+  await prisma.machinery.upsert({
+    where: { reference: "TRQ-01" },
     update: {},
     create: {
-      name: "Plastificadora",
-      reference: "PLAST-01",
-      type: "PLASTIFICADO",
+      name: "Troqueladora Automatica",
+      reference: "TRQ-01",
+      type: "TROQUELADO",
       is_active: true,
     },
   });
 
   console.log("✅ Maquinaria lista");
 
-  // ==================== FORMATS ====================
   await prisma.format.createMany({
     data: [
       { name: "1 Pliego", is_active: true },
       { name: "1/2 Pliego", is_active: true },
-      { name: "1/3 Pliego", is_active: true },
       { name: "1/4 Pliego", is_active: true },
-      { name: "1/5 Pliego", is_active: true },
-      { name: "1/6 Pliego", is_active: true },
       { name: "1/8 Pliego", is_active: true },
-      { name: "1/9 Pliego", is_active: true },
-      { name: "1/10 Pliego", is_active: true },
-      { name: "1/12 Pliego", is_active: true },
-      { name: "1/15 Pliego", is_active: true },
-      { name: "1/16 Pliego", is_active: true },
-      { name: "1/18 Pliego", is_active: true },
-      { name: "1/20 Pliego", is_active: true },
-      { name: "1/22 Pliego", is_active: true },
-      { name: "1/24 Pliego", is_active: true },
-      { name: "1/25 Pliego", is_active: true },
-      { name: "1/32 Pliego", is_active: true },
-      { name: "1/36 Pliego", is_active: true },
-      { name: "1/132 Pliego", is_active: true },
     ],
     skipDuplicates: true,
   });
 
-  console.log("✅ Formats listos");
+  console.log("✅ Formatos listos");
 
-  // ==================== PAPER TYPES ====================
+  const pliego = await prisma.format.findUnique({
+    where: { name: "1 Pliego" },
+  });
+
+  if (pliego) {
+    await prisma.measure.createMany({
+      data: [
+        { width: 70, height: 100, format_id: pliego.id, is_active: true },
+        { width: 50, height: 35, format_id: pliego.id, is_active: true },
+        { width: 35, height: 25, format_id: pliego.id, is_active: true },
+      ],
+      skipDuplicates: true,
+    });
+  }
+
+  console.log("✅ Medidas listas");
+
   await prisma.paper_Type.createMany({
     data: [
       {
-        name: "Propalcote",
-        description: "Papel brillante",
-        grammage: 90,
-        is_active: true,
-      },
-      {
-        name: "Propalcote",
-        description: "Papel brillante",
-        grammage: 115,
-        is_active: true,
-      },
-      {
-        name: "Propalcote",
-        description: "Papel brillante",
-        grammage: 150,
-        is_active: true,
-      },
-      {
-        name: "Propalcote",
-        description: "Papel brillante",
+        name: "Optimo Kraft",
+        description: "Papel kraft para empaque",
         grammage: 200,
         is_active: true,
       },
       {
-        name: "Bond",
-        description: "Papel estándar",
-        grammage: 75,
-        is_active: true,
-      },
-      {
-        name: "Bond",
-        description: "Papel estándar",
-        grammage: 90,
-        is_active: true,
-      },
-      {
-        name: "Opalina",
-        description: "Alta blancura",
+        name: "Propalcote",
+        description: "Papel brillante",
         grammage: 150,
+        is_active: true,
+      },
+      {
+        name: "Bond",
+        description: "Papel estandar",
+        grammage: 90,
         is_active: true,
       },
     ],
     skipDuplicates: true,
   });
 
-  console.log("✅ Paper types listos");
+  console.log("✅ Tipos de papel listos");
 
-  // ==================== THIRDS ====================
-  const third1 = await prisma.thirds.upsert({
-    where: { email: "contacto@abc.com" },
+  const cliente = await prisma.thirds.upsert({
+    where: { email: "produccion@lagranjaburguer.com" },
     update: {},
     create: {
-      name: "Empresa ABC",
-      email: "contacto@abc.com",
-      address: "Calle 10 #20-30",
+      name: "La Granja Burguer",
+      email: "produccion@lagranjaburguer.com",
+      address: "Zona industrial",
       type_person: "CLIENTE",
-      company_name: "ABC S.A.S",
+      company_name: "La Granja Burguer",
       is_active: true,
     },
   });
 
-  const third2 = await prisma.thirds.upsert({
-    where: { email: "ventas@xyz.com" },
+  await prisma.thirds.upsert({
+    where: { email: "compras@proveedorpapel.com" },
     update: {},
     create: {
-      name: "Distribuidora XYZ",
-      email: "ventas@xyz.com",
-      address: "Carrera 5 #15-20",
+      name: "Proveedor Papel",
+      email: "compras@proveedorpapel.com",
+      address: "Parque industrial",
       type_person: "PROVEEDOR",
-      company_name: "XYZ Ltda",
+      company_name: "Proveedor Papel SAS",
       is_active: true,
     },
   });
 
-  const third3 = await prisma.thirds.upsert({
-    where: { email: "juan@gmail.com" },
+  console.log("✅ Terceros listos");
+
+  const productoCaja = await prisma.product.upsert({
+    where: { name: "Caja Box" },
+    update: {},
+    create: { name: "Caja Box", is_active: true },
+  });
+
+  await prisma.product.upsert({
+    where: { name: "Volante Promocional" },
+    update: {},
+    create: { name: "Volante Promocional", is_active: true },
+  });
+
+  console.log("✅ Productos listos");
+
+  await prisma.product_Customer.upsert({
+    where: { code: "BOX01-LGB" },
     update: {},
     create: {
-      name: "Juan Pérez",
-      email: "juan@gmail.com",
-      address: "Calle 50 #30-10",
-      type_person: "CLIENTE",
-      company_name: null,
+      code: "BOX01-LGB",
+      name: "Caja Box La Granja Burguer",
+      product_id: productoCaja.id,
+      third_id: cliente.id,
       is_active: true,
     },
   });
 
-  console.log("✅ Thirds listos");
-
-  // ==================== PRODUCTS ====================
-  const product1 = await prisma.product.upsert({
-    where: { name: "Volante 1/4" },
-    update: {},
-    create: { name: "Volante 1/4", is_active: true },
-  });
-
-  const product2 = await prisma.product.upsert({
-    where: { name: "Afiche Pliego" },
-    update: {},
-    create: { name: "Afiche Pliego", is_active: true },
-  });
-
-  const product3 = await prisma.product.upsert({
-    where: { name: "Tarjeta Personal" },
-    update: {},
-    create: { name: "Tarjeta Personal", is_active: true },
-  });
-
-  console.log("✅ Products listos");
-
-  // ==================== PRODUCT CUSTOMER ====================
-  const pc1 = await prisma.product_Customer.upsert({
-    where: { code: "PC-001" },
-    update: {},
-    create: {
-      code: "PC-001",
-      name: "Volante Empresa ABC",
-      product_id: product1.id,
-      third_id: third1.id,
-      is_active: true,
-    },
-  });
-
-  const pc2 = await prisma.product_Customer.upsert({
-    where: { code: "PC-002" },
-    update: {},
-    create: {
-      code: "PC-002",
-      name: "Tarjeta Juan Pérez",
-      product_id: product3.id,
-      third_id: third3.id,
-      is_active: true,
-    },
-  });
-
-  console.log("✅ Product customers listos");
-
+  console.log("✅ Productos por cliente listos");
   console.log("🎉 Seed ejecutado correctamente");
 }
 
