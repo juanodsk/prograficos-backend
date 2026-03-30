@@ -18,6 +18,7 @@ import paperTypeRoutes from "./routes/paper_type.routes.js";
 import processesRoutes from "./routes/processes.routes.js";
 import machineryRoutes from "./routes/machinery.routes.js";
 import orderRoutes from "./routes/order.routes.js";
+import orderProcessRoutes from "./routes/order_process.routes.js";
 
 // SERVER CONFIGURATION//
 
@@ -68,6 +69,7 @@ app.use("/paper_types", paperTypeRoutes);
 app.use("/processes", processesRoutes);
 app.use("/machinery", machineryRoutes);
 app.use("/order", orderRoutes);
+app.use("/order-processes", orderProcessRoutes);
 
 //PORT LISTENING//
 app.listen(PORT, () => {
