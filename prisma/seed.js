@@ -324,41 +324,63 @@ async function main() {
   });
 
   if (pliego) {
-    await prisma.measure.createMany({
-      data: [
-        { width: 70, height: 100, format_id: pliego.id, is_active: true },
-        { width: 50, height: 35, format_id: pliego.id, is_active: true },
-        { width: 35, height: 25, format_id: pliego.id, is_active: true },
-      ],
-      skipDuplicates: true,
-    });
+    const defaultMeasures = [
+      { width: 70, height: 100, format_id: pliego.id, is_active: true },
+      { width: 50, height: 35, format_id: pliego.id, is_active: true },
+      { width: 35, height: 25, format_id: pliego.id, is_active: true },
+    ];
+
+    for (const measure of defaultMeasures) {
+      const existingMeasure = await prisma.measure.findFirst({
+        where: {
+          width: measure.width,
+          height: measure.height,
+          format_id: measure.format_id,
+        },
+      });
+
+      if (!existingMeasure) {
+        await prisma.measure.create({ data: measure });
+      }
+    }
   }
 
   console.log("✅ Medidas listas");
 
-  await prisma.paper_Type.createMany({
-    data: [
-      {
-        name: "Optimo Kraft",
-        description: "Papel kraft para empaque",
-        grammage: 200,
-        is_active: true,
+  const defaultPaperTypes = [
+    {
+      name: "Optimo Kraft",
+      description: "Papel kraft para empaque",
+      grammage: 200,
+      is_active: true,
+    },
+    {
+      name: "Propalcote",
+      description: "Papel brillante",
+      grammage: 150,
+      is_active: true,
+    },
+    {
+      name: "Bond",
+      description: "Papel estandar",
+      grammage: 90,
+      is_active: true,
+    },
+  ];
+
+  for (const paperType of defaultPaperTypes) {
+    const existingPaperType = await prisma.paper_Type.findFirst({
+      where: {
+        name: paperType.name,
+        description: paperType.description,
+        grammage: paperType.grammage,
       },
-      {
-        name: "Propalcote",
-        description: "Papel brillante",
-        grammage: 150,
-        is_active: true,
-      },
-      {
-        name: "Bond",
-        description: "Papel estandar",
-        grammage: 90,
-        is_active: true,
-      },
-    ],
-    skipDuplicates: true,
-  });
+    });
+
+    if (!existingPaperType) {
+      await prisma.paper_Type.create({ data: paperType });
+    }
+  }
 
   console.log("✅ Tipos de papel listos");
 

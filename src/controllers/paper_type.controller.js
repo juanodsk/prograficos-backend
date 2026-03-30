@@ -4,11 +4,31 @@ import { buildActiveWhere, normalizeIsActive } from "../utils/active.js";
 const createPaperType = async (req, res) => {
   try {
     const { name, description, grammage, is_active } = req.body;
+    const normalizedName = name?.trim();
+    const normalizedDescription = description?.trim();
+    const normalizedGrammage = Number(grammage);
+
+    const duplicatePaperType = await prisma.paper_Type.findFirst({
+      where: {
+        name: normalizedName,
+        description: normalizedDescription,
+        grammage: normalizedGrammage,
+      },
+    });
+
+    if (duplicatePaperType) {
+      return res.status(400).json({
+        status: "error",
+        message: "Ya existe un tipo de papel con ese nombre, descripcion y gramaje",
+        data: duplicatePaperType,
+      });
+    }
+
     const paperType = await prisma.paper_Type.create({
       data: {
-        name,
-        description,
-        grammage,
+        name: normalizedName,
+        description: normalizedDescription,
+        grammage: normalizedGrammage,
         is_active: normalizeIsActive(is_active, true),
       },
     });
@@ -73,8 +93,12 @@ const updatePaperType = async (req, res) => {
   try {
     const { id } = req.params;
     const { name, description, grammage, is_active } = req.body;
+    const paperTypeId = parseInt(id, 10);
+    const normalizedName = name?.trim();
+    const normalizedDescription = description?.trim();
+    const normalizedGrammage = Number(grammage);
     const paperTypeExists = await prisma.paper_Type.findUnique({
-      where: { id: parseInt(id) },
+      where: { id: paperTypeId },
     });
 
     if (!paperTypeExists) {
@@ -84,14 +108,31 @@ const updatePaperType = async (req, res) => {
       });
     }
 
+    const duplicatePaperType = await prisma.paper_Type.findFirst({
+      where: {
+        id: { not: paperTypeId },
+        name: normalizedName,
+        description: normalizedDescription,
+        grammage: normalizedGrammage,
+      },
+    });
+
+    if (duplicatePaperType) {
+      return res.status(400).json({
+        status: "error",
+        message: "Ya existe un tipo de papel con ese nombre, descripcion y gramaje",
+        data: duplicatePaperType,
+      });
+    }
+
     const paperType = await prisma.paper_Type.update({
       where: {
-        id: parseInt(id),
+        id: paperTypeId,
       },
       data: {
-        name,
-        description,
-        grammage,
+        name: normalizedName,
+        description: normalizedDescription,
+        grammage: normalizedGrammage,
         is_active: normalizeIsActive(is_active, paperTypeExists.is_active),
       },
     });
