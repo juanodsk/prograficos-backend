@@ -276,7 +276,7 @@ model Troqueles {
 model Header_Production_Order {
   id                      Int          @id @default(autoincrement())
   date                    DateTime     @default(now())
-  date_delivery_estimated DateTime
+  date_delivery_estimated DateTime?
   order_status            Order_Status @default(PENDIENTE)
   is_active               Boolean      @default(true)
 

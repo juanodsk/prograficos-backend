@@ -26,7 +26,11 @@ const orderInclude = {
     include: {
       process: true,
       machinery: true,
-      measure_cutting: true,
+      measure_cutting: {
+        include: {
+          format: true,
+        },
+      },
       user: {
         select: {
           id: true,
@@ -43,7 +47,99 @@ const orderInclude = {
   },
 };
 
+const auditOrderInclude = {
+  product_customer: {
+    include: {
+      third: true,
+      product: true,
+    },
+  },
+  measure: {
+    include: {
+      format: true,
+    },
+  },
+  paper_type: true,
+  troquel: true,
+  user: {
+    select: {
+      id: true,
+      name: true,
+      surename: true,
+      email: true,
+      role: true,
+    },
+  },
+  detail_production_orders: {
+    include: {
+      process: true,
+      machinery: true,
+      measure_cutting: {
+        include: {
+          format: true,
+        },
+      },
+      field_values: {
+        include: {
+          field_definition: true,
+        },
+        orderBy: {
+          field_definition: {
+            sort_order: "asc",
+          },
+        },
+      },
+      user: {
+        select: {
+          id: true,
+          name: true,
+          surename: true,
+          email: true,
+          role: true,
+        },
+      },
+    },
+    orderBy: {
+      process: {
+        order: "asc",
+      },
+    },
+  },
+};
+
 const parseOrderId = (id) => parseInt(id, 10);
+
+const getClosingProcess = (details = []) =>
+  [...details]
+    .reverse()
+    .find((detail) => detail.process_state === "TERMINADO") || null;
+
+const attachOrderAuditSummary = (order) => {
+  const details = order.detail_production_orders || [];
+  const closingProcess = getClosingProcess(details);
+
+  const deliveredTotal =
+    order.total_delivered ?? closingProcess?.quantity_delivered ?? 0;
+
+  const damagedTotal = details.reduce(
+    (total, detail) => total + (detail.quantity_damaged || 0),
+    0,
+  );
+
+  return {
+    ...order,
+    audit_summary: {
+      closed_at: closingProcess?.end_hour || closingProcess?.end_date || null,
+      closed_by: closingProcess?.user || null,
+      process_count: details.length,
+      completed_processes: details.filter(
+        (detail) => detail.process_state === "TERMINADO",
+      ).length,
+      delivered_total: deliveredTotal,
+      damaged_total: order.total_damaged ?? damagedTotal,
+    },
+  };
+};
 
 const deleteOrderDetailDependencies = async (tx, headerOrderId) => {
   const detailIds = await tx.detail_Production_Order.findMany({
@@ -67,7 +163,7 @@ const deleteOrderDetailDependencies = async (tx, headerOrderId) => {
 };
 
 const validateOrderPayload = async ({
-  date_delivery_estimated,
+  // date_delivery_estimated,
   amount_sheets,
   total_estimated,
   measure_id,
@@ -76,9 +172,9 @@ const validateOrderPayload = async ({
   product_customer_id,
   processes,
 }) => {
-  if (!date_delivery_estimated) {
-    return "La fecha estimada de entrega es obligatoria";
-  }
+  // if (!date_delivery_estimated) {
+  //   return "La fecha estimada de entrega es obligatoria";
+  // }
 
   if (!amount_sheets || amount_sheets <= 0) {
     return "La cantidad de hojas debe ser mayor a 0";
@@ -190,7 +286,9 @@ const createOrder = async (req, res) => {
 
     const order = await prisma.header_Production_Order.create({
       data: {
-        date_delivery_estimated: new Date(date_delivery_estimated),
+        date_delivery_estimated: date_delivery_estimated
+          ? new Date(date_delivery_estimated)
+          : null,
         amount_sheets: Number(amount_sheets),
         total_estimated: Number(total_estimated),
         measure_id: Number(measure_id),
@@ -203,6 +301,7 @@ const createOrder = async (req, res) => {
             ...new Set(processes.map((processId) => Number(processId))),
           ].map((processId) => ({
             process_id: processId,
+            measure_cutting_id: Number(measure_id),
             quantity_delivered: 0,
             quantity_damaged: 0,
           })),
@@ -246,6 +345,35 @@ const getOrders = async (req, res) => {
     res.status(500).json({
       status: "error",
       message: "Error al obtener las órdenes",
+    });
+  }
+};
+
+const getClosedOrdersAudit = async (req, res) => {
+  try {
+    const orders = await prisma.header_Production_Order.findMany({
+      where: {
+        is_active: true,
+        order_status: {
+          in: ["TERMINADO", "ENTREGADO"],
+        },
+      },
+      include: auditOrderInclude,
+      orderBy: {
+        date: "desc",
+      },
+    });
+
+    res.status(200).json({
+      status: "success",
+      message: "Auditoría de órdenes cerradas obtenida exitosamente",
+      data: orders.map(attachOrderAuditSummary),
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      status: "error",
+      message: "Error al obtener la auditoría de órdenes cerradas",
     });
   }
 };
@@ -379,6 +507,7 @@ const updateOrder = async (req, res) => {
               ...new Set(processes.map((processId) => Number(processId))),
             ].map((processId) => ({
               process_id: processId,
+              measure_cutting_id: Number(measure_id),
               quantity_delivered: 0,
               quantity_damaged: 0,
             })),
@@ -504,6 +633,7 @@ const orderFinished = async (req, res) => {
 export {
   createOrder,
   getOrders,
+  getClosedOrdersAudit,
   getOrderById,
   updateOrder,
   deleteOrder,

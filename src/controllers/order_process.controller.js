@@ -12,7 +12,11 @@ const orderProcessInclude = {
     },
   },
   machinery: true,
-  measure_cutting: true,
+  measure_cutting: {
+    include: {
+      format: true,
+    },
+  },
   field_values: {
     include: {
       field_definition: true,
@@ -36,6 +40,7 @@ const orderProcessInclude = {
     select: {
       id: true,
       is_active: true,
+      measure_id: true,
       order_status: true,
       date: true,
       date_delivery_estimated: true,
@@ -44,6 +49,39 @@ const orderProcessInclude = {
 };
 
 const parseId = (value) => parseInt(value, 10);
+
+const getOrderedOrderDetails = async (db, headerOrderId) =>
+  db.detail_Production_Order.findMany({
+    where: {
+      header_order_id: headerOrderId,
+    },
+    select: {
+      id: true,
+      process_state: true,
+      process: {
+        select: {
+          id: true,
+          name: true,
+          order: true,
+        },
+      },
+    },
+    orderBy: [{ process: { order: "asc" } }, { id: "asc" }],
+  });
+
+const getBlockingPreviousProcess = (orderedDetails, detailId) => {
+  const currentIndex = orderedDetails.findIndex((detail) => detail.id === detailId);
+
+  if (currentIndex <= 0) {
+    return null;
+  }
+
+  return (
+    orderedDetails
+      .slice(0, currentIndex)
+      .find((detail) => detail.process_state !== "TERMINADO") || null
+  );
+};
 
 const syncDynamicFieldValues = async (
   tx,
@@ -93,7 +131,18 @@ const syncDynamicFieldValues = async (
 const updateHeaderOrderStatus = async (tx, headerOrderId) => {
   const details = await tx.detail_Production_Order.findMany({
     where: { header_order_id: headerOrderId },
-    select: { process_state: true },
+    select: {
+      id: true,
+      process_state: true,
+      quantity_delivered: true,
+      quantity_damaged: true,
+      process: {
+        select: {
+          order: true,
+        },
+      },
+    },
+    orderBy: [{ process: { order: "asc" } }, { id: "asc" }],
   });
 
   if (!details.length) return;
@@ -112,9 +161,22 @@ const updateHeaderOrderStatus = async (tx, headerOrderId) => {
       ? "EN_PROCESO"
       : "PENDIENTE";
 
+  const totalDamaged = details.reduce(
+    (total, detail) => total + (detail.quantity_damaged || 0),
+    0,
+  );
+
+  const lastCompletedDetail = [...details]
+    .reverse()
+    .find((detail) => detail.process_state === "TERMINADO");
+
   await tx.header_Production_Order.update({
     where: { id: headerOrderId },
-    data: { order_status: nextStatus },
+    data: {
+      order_status: nextStatus,
+      total_damaged: totalDamaged,
+      total_delivered: lastCompletedDetail?.quantity_delivered ?? null,
+    },
   });
 };
 
@@ -215,8 +277,7 @@ const startOrderProcess = async (req, res) => {
       });
     }
 
-    const { machinery_id, measure_cutting_id, observations, field_values } =
-      req.body;
+    const { machinery_id, measure_cutting_id, observations, field_values } = req.body;
 
     const detail = await prisma.detail_Production_Order.findUnique({
       where: { id: detailId },
@@ -258,10 +319,44 @@ const startOrderProcess = async (req, res) => {
       });
     }
 
-    if (machinery_id) {
+    const orderedDetails = await getOrderedOrderDetails(
+      prisma,
+      detail.header_order_id,
+    );
+
+    const blockingPreviousProcess = getBlockingPreviousProcess(
+      orderedDetails,
+      detailId,
+    );
+
+    if (blockingPreviousProcess) {
+      return res.status(400).json({
+        status: "error",
+        message: `No puedes iniciar este proceso hasta terminar ${blockingPreviousProcess.process?.name || "el proceso anterior"}`,
+      });
+    }
+
+    const requestedMachineryId =
+      machinery_id != null && machinery_id !== "" ? Number(machinery_id) : null;
+    if (requestedMachineryId != null && Number.isNaN(requestedMachineryId)) {
+      return res.status(400).json({
+        status: "error",
+        message: "La maquinaria seleccionada no es válida",
+      });
+    }
+
+    if (measure_cutting_id != null && measure_cutting_id !== "") {
+      return res.status(400).json({
+        status: "error",
+        message:
+          "La medida de corte se toma automáticamente del formato y tamaño de impresión de la orden",
+      });
+    }
+
+    if (requestedMachineryId) {
       const machinery = await prisma.machinery.findFirst({
         where: {
-          id: Number(machinery_id),
+          id: requestedMachineryId,
           is_active: true,
         },
       });
@@ -274,36 +369,32 @@ const startOrderProcess = async (req, res) => {
       }
     }
 
-    if (measure_cutting_id) {
-      const measure = await prisma.measure.findFirst({
-        where: {
-          id: Number(measure_cutting_id),
-          is_active: true,
-        },
-      });
-
-      if (!measure) {
-        return res.status(400).json({
-          status: "error",
-          message: "La medida de corte seleccionada no existe o está inactiva",
-        });
-      }
-    }
+    const resolvedMeasureCuttingId = detail.header_order?.measure_id || null;
 
     const now = new Date();
 
     const updatedDetail = await prisma.$transaction(async (tx) => {
-      const result = await tx.detail_Production_Order.update({
+      if (resolvedMeasureCuttingId) {
+        await tx.detail_Production_Order.updateMany({
+          where: {
+            header_order_id: detail.header_order_id,
+          },
+          data: {
+            measure_cutting_id: resolvedMeasureCuttingId,
+          },
+        });
+      }
+
+      await tx.detail_Production_Order.update({
         where: { id: detailId },
         data: {
           start_date: detail.start_date || now,
           start_hour: detail.start_hour || now,
           process_state: "EN_PROCESO",
           user_id: req.user.id,
-          machinery_id: machinery_id ? Number(machinery_id) : detail.machinery_id,
-          measure_cutting_id: measure_cutting_id
-            ? Number(measure_cutting_id)
-            : detail.measure_cutting_id,
+          machinery_id:
+            requestedMachineryId != null ? requestedMachineryId : detail.machinery_id,
+          measure_cutting_id: resolvedMeasureCuttingId,
           observations: observations ?? detail.observations,
         },
         include: orderProcessInclude,
@@ -329,7 +420,7 @@ const startOrderProcess = async (req, res) => {
     });
     emitProductionChange(req, "process:started", {
       detailId: updatedDetail.id,
-      orderId: updatedDetail.header_order?.id || detail.header_order_id,
+      orderId: detail.header_order_id,
       processState: updatedDetail.process_state,
       processName: updatedDetail.process?.name,
     });
@@ -416,56 +507,31 @@ const finishOrderProcess = async (req, res) => {
       });
     }
 
+    if (detail.process_state !== "EN_PROCESO") {
+      return res.status(400).json({
+        status: "error",
+        message: "Debes iniciar el proceso antes de poder finalizarlo",
+      });
+    }
+
     const hasInputDataChanges =
       machinery_id != null ||
       measure_cutting_id != null ||
       observations != null ||
       (Array.isArray(field_values) && field_values.length > 0);
 
-    if (detail.process_state !== "PENDIENTE" && hasInputDataChanges) {
+    if (hasInputDataChanges) {
       return res.status(400).json({
         status: "error",
         message:
-          "Los datos de entrada no se pueden modificar después de iniciar el proceso",
+          "Al finalizar solo puedes registrar la cantidad entregada y la cantidad dañada",
       });
-    }
-
-    if (machinery_id) {
-      const machinery = await prisma.machinery.findFirst({
-        where: {
-          id: Number(machinery_id),
-          is_active: true,
-        },
-      });
-
-      if (!machinery) {
-        return res.status(400).json({
-          status: "error",
-          message: "La maquinaria seleccionada no existe o está inactiva",
-        });
-      }
-    }
-
-    if (measure_cutting_id) {
-      const measure = await prisma.measure.findFirst({
-        where: {
-          id: Number(measure_cutting_id),
-          is_active: true,
-        },
-      });
-
-      if (!measure) {
-        return res.status(400).json({
-          status: "error",
-          message: "La medida de corte seleccionada no existe o está inactiva",
-        });
-      }
     }
 
     const now = new Date();
 
     const updatedDetail = await prisma.$transaction(async (tx) => {
-      const result = await tx.detail_Production_Order.update({
+      await tx.detail_Production_Order.update({
         where: { id: detailId },
         data: {
           start_date: detail.start_date || now,
@@ -474,23 +540,11 @@ const finishOrderProcess = async (req, res) => {
           end_hour: now,
           process_state: "TERMINADO",
           user_id: req.user.id,
-          machinery_id: machinery_id ? Number(machinery_id) : detail.machinery_id,
-          measure_cutting_id: measure_cutting_id
-            ? Number(measure_cutting_id)
-            : detail.measure_cutting_id,
           quantity_delivered: Number(quantity_delivered),
           quantity_damaged: Number(quantity_damaged),
-          observations: observations ?? detail.observations,
         },
         include: orderProcessInclude,
       });
-
-      await syncDynamicFieldValues(
-        tx,
-        detailId,
-        detail.process_id,
-        field_values,
-      );
       await updateHeaderOrderStatus(tx, detail.header_order_id);
       return tx.detail_Production_Order.findUnique({
         where: { id: detailId },
@@ -505,7 +559,7 @@ const finishOrderProcess = async (req, res) => {
     });
     emitProductionChange(req, "process:finished", {
       detailId: updatedDetail.id,
-      orderId: updatedDetail.header_order?.id || detail.header_order_id,
+      orderId: detail.header_order_id,
       processState: updatedDetail.process_state,
       processName: updatedDetail.process?.name,
     });

@@ -4,6 +4,7 @@ import { authorizeRoles } from "../middlewares/role.middleware.js";
 import {
   createOrder,
   getOrders,
+  getClosedOrdersAudit,
   getOrderById,
   updateOrder,
   deleteOrder,
@@ -18,6 +19,7 @@ router.post(
   createOrder,
 );
 router.get("/", verifyToken, getOrders);
+router.get("/audit", verifyToken, getClosedOrdersAudit);
 router.get("/:id", verifyToken, getOrderById);
 router.put(
   "/:id",
