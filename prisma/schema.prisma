@@ -65,6 +65,22 @@ enum Field_Type {
   SELECT
 }
 
+enum Machinery_Type {
+  PREPRENSA
+  GUILLOTINA
+  IMPRESORA_OFFSET
+  IMPRESORA_DIGITAL
+  PLASTIFICADORA
+  LAMINADORA
+  BARNIZADORA
+  ESTAMPADORA
+  TROQUELADORA
+  PEGADORA
+  DOBLADORA
+  EMPAQUE
+  OTRA
+}
+
 //////////////////////////////////////////////////////
 // USERS
 //////////////////////////////////////////////////////
@@ -131,7 +147,7 @@ model Machinery {
   id        Int     @id @default(autoincrement())
   name      String
   reference String  @unique
-  type      String
+  type      Machinery_Type
 
   is_active Boolean @default(true)
 
@@ -188,6 +204,7 @@ model Paper_Type {
   is_active Boolean @default(true)
 
   header_production_orders Header_Production_Order[]
+  suppliers                PaperTypeSupplier[]
 
   @@map("paper_types")
 }
@@ -207,8 +224,22 @@ model Thirds {
   is_active Boolean @default(true)
 
   product_customers Product_Customer[]
+  paper_type_suppliers PaperTypeSupplier[]
 
   @@map("thirds")
+}
+
+model PaperTypeSupplier {
+  id             Int     @id @default(autoincrement())
+  third_id       Int
+  paper_type_id  Int
+  purchase_price Decimal @db.Decimal(12, 2)
+
+  third      Thirds     @relation(fields: [third_id], references: [id])
+  paper_type Paper_Type @relation(fields: [paper_type_id], references: [id])
+
+  @@unique([paper_type_id, third_id])
+  @@map("paper_type_suppliers")
 }
 
 //////////////////////////////////////////////////////

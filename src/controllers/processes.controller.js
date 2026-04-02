@@ -1,5 +1,6 @@
 import { prisma } from "../config/db.js";
 import { buildActiveWhere, normalizeIsActive } from "../utils/active.js";
+import { toSnakeCase } from "../utils/string.js";
 
 const buildFieldDefinitionsData = (fieldDefinitions = []) =>
   fieldDefinitions.map((field, index) => ({
@@ -16,8 +17,8 @@ const normalizeFieldDefinitionInput = (field, index) => ({
     field?.id != null && field.id !== ""
       ? Number(field.id)
       : null,
-  key: field?.key?.trim(),
   label: field?.label?.trim(),
+  key: toSnakeCase(field?.label?.trim() || field?.key?.trim() || ""),
   field_type: field?.field_type,
   is_required: Boolean(field?.is_required),
   sort_order: Number(field?.sort_order) || index + 1,
@@ -32,14 +33,18 @@ const validateFieldDefinitions = (fieldDefinitions = []) => {
       return "Uno de los campos configurables no tiene un id válido";
     }
 
-    if (!field.key || !field.label || !field.field_type) {
-      return "Todos los campos configurables deben tener clave, nombre y tipo";
+    if (!field.label || !field.field_type) {
+      return "Todos los campos configurables deben tener nombre y tipo";
+    }
+
+    if (!field.key) {
+      return "La clave automática de uno de los campos no es válida";
     }
 
     const normalizedKey = field.key.toLowerCase();
 
     if (seenKeys.has(normalizedKey)) {
-      return "No puedes repetir la clave en los campos configurables";
+      return "No puedes repetir campos que generen la misma clave automática";
     }
 
     seenKeys.add(normalizedKey);

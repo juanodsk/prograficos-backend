@@ -263,44 +263,70 @@ async function main() {
 
   await prisma.machinery.upsert({
     where: { reference: "GUI-01" },
-    update: {},
+    update: {
+      type: "GUILLOTINA",
+      is_active: true,
+    },
     create: {
       name: "Guillotina Polar",
       reference: "GUI-01",
-      type: "CORTE",
+      type: "GUILLOTINA",
       is_active: true,
     },
   });
 
   await prisma.machinery.upsert({
     where: { reference: "HEI-74" },
-    update: {},
+    update: {
+      type: "IMPRESORA_OFFSET",
+      is_active: true,
+    },
     create: {
       name: "Heidelberg 74",
       reference: "HEI-74",
-      type: "IMPRESION",
+      type: "IMPRESORA_OFFSET",
       is_active: true,
     },
   });
 
   await prisma.machinery.upsert({
     where: { reference: "PLA-01" },
-    update: {},
+    update: {
+      type: "PLASTIFICADORA",
+      is_active: true,
+    },
     create: {
       name: "Plastificadora Termica",
       reference: "PLA-01",
-      type: "PLASTIFICADO",
+      type: "PLASTIFICADORA",
       is_active: true,
     },
   });
 
   await prisma.machinery.upsert({
     where: { reference: "TRQ-01" },
-    update: {},
+    update: {
+      type: "TROQUELADORA",
+      is_active: true,
+    },
     create: {
       name: "Troqueladora Automatica",
       reference: "TRQ-01",
-      type: "TROQUELADO",
+      type: "TROQUELADORA",
+      is_active: true,
+    },
+  });
+
+  await prisma.machinery.upsert({
+    where: { reference: "DIG-01" },
+    update: {
+      type: "IMPRESORA_DIGITAL",
+      is_active: true,
+    },
+    create: {
+      name: "Konica Minolta C4080",
+      reference: "DIG-01",
+      type: "IMPRESORA_DIGITAL",
       is_active: true,
     },
   });
@@ -410,6 +436,19 @@ async function main() {
     },
   });
 
+  await prisma.thirds.upsert({
+    where: { email: "ventas@dispapeles.com" },
+    update: {},
+    create: {
+      name: "Dispapeles",
+      email: "ventas@dispapeles.com",
+      address: "Zona logistica",
+      type_person: "PROVEEDOR",
+      company_name: "Dispapeles SAS",
+      is_active: true,
+    },
+  });
+
   console.log("✅ Terceros listos");
 
   const productoCaja = await prisma.product.upsert({
@@ -437,6 +476,98 @@ async function main() {
       is_active: true,
     },
   });
+
+  const proveedorPapel = await prisma.thirds.findUnique({
+    where: { email: "compras@proveedorpapel.com" },
+  });
+  const dispapeles = await prisma.thirds.findUnique({
+    where: { email: "ventas@dispapeles.com" },
+  });
+  const optimoKraft = await prisma.paper_Type.findFirst({
+    where: { name: "Optimo Kraft" },
+  });
+  const propalcote = await prisma.paper_Type.findFirst({
+    where: { name: "Propalcote" },
+  });
+  const bond = await prisma.paper_Type.findFirst({
+    where: { name: "Bond" },
+  });
+
+  if (proveedorPapel && optimoKraft) {
+    await prisma.paperTypeSupplier.upsert({
+      where: {
+        paper_type_id_third_id: {
+          paper_type_id: optimoKraft.id,
+          third_id: proveedorPapel.id,
+        },
+      },
+      update: {
+        purchase_price: 5200,
+      },
+      create: {
+        paper_type_id: optimoKraft.id,
+        third_id: proveedorPapel.id,
+        purchase_price: 5200,
+      },
+    });
+  }
+
+  if (proveedorPapel && propalcote) {
+    await prisma.paperTypeSupplier.upsert({
+      where: {
+        paper_type_id_third_id: {
+          paper_type_id: propalcote.id,
+          third_id: proveedorPapel.id,
+        },
+      },
+      update: {
+        purchase_price: 4600,
+      },
+      create: {
+        paper_type_id: propalcote.id,
+        third_id: proveedorPapel.id,
+        purchase_price: 4600,
+      },
+    });
+  }
+
+  if (dispapeles && propalcote) {
+    await prisma.paperTypeSupplier.upsert({
+      where: {
+        paper_type_id_third_id: {
+          paper_type_id: propalcote.id,
+          third_id: dispapeles.id,
+        },
+      },
+      update: {
+        purchase_price: 4550,
+      },
+      create: {
+        paper_type_id: propalcote.id,
+        third_id: dispapeles.id,
+        purchase_price: 4550,
+      },
+    });
+  }
+
+  if (dispapeles && bond) {
+    await prisma.paperTypeSupplier.upsert({
+      where: {
+        paper_type_id_third_id: {
+          paper_type_id: bond.id,
+          third_id: dispapeles.id,
+        },
+      },
+      update: {
+        purchase_price: 2100,
+      },
+      create: {
+        paper_type_id: bond.id,
+        third_id: dispapeles.id,
+        purchase_price: 2100,
+      },
+    });
+  }
 
   console.log("✅ Productos por cliente listos");
   console.log("🎉 Seed ejecutado correctamente");

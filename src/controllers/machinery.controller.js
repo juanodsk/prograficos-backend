@@ -1,16 +1,64 @@
 import { prisma } from "../config/db.js";
 import { buildActiveWhere, normalizeIsActive } from "../utils/active.js";
+import { isValidMachineryType } from "../constants/machineryTypes.js";
+
+const duplicateReferenceMessage = "El código de la máquina ya está siendo utilizado";
+
+const normalizeMachineryPayload = (body, fallbackIsActive = true) => ({
+  name: body?.name?.trim(),
+  reference: body?.reference?.trim(),
+  type: body?.type,
+  is_active: normalizeIsActive(body?.is_active, fallbackIsActive),
+});
+
+const findMachineryByReference = (reference, excludeId = null) =>
+  prisma.machinery.findFirst({
+    where: {
+      reference: {
+        equals: reference,
+        mode: "insensitive",
+      },
+      ...(excludeId != null ? { id: { not: excludeId } } : {}),
+    },
+    select: { id: true, reference: true },
+  });
 
 const createMachinery = async (req, res) => {
   try {
-    const { name, reference, type, is_active } = req.body;
+    const payload = normalizeMachineryPayload(req.body, true);
+
+    if (!payload.name) {
+      return res.status(400).json({
+        status: "error",
+        message: "El nombre de la máquina es obligatorio",
+      });
+    }
+
+    if (!payload.reference) {
+      return res.status(400).json({
+        status: "error",
+        message: "La referencia de la máquina es obligatoria",
+      });
+    }
+
+    if (!payload.type || !isValidMachineryType(payload.type)) {
+      return res.status(400).json({
+        status: "error",
+        message: "El tipo de maquinaria seleccionado no es válido",
+      });
+    }
+
+    const duplicateMachinery = await findMachineryByReference(payload.reference);
+
+    if (duplicateMachinery) {
+      return res.status(409).json({
+        status: "warning",
+        message: duplicateReferenceMessage,
+      });
+    }
+
     const machinery = await prisma.machinery.create({
-      data: {
-        name,
-        reference,
-        type,
-        is_active: normalizeIsActive(is_active, true),
-      },
+      data: payload,
     });
     res.status(201).json({
       status: "success",
@@ -18,12 +66,54 @@ const createMachinery = async (req, res) => {
       data: machinery,
     });
   } catch (error) {
+    if (error?.code === "P2002") {
+      return res.status(409).json({
+        status: "warning",
+        message: duplicateReferenceMessage,
+      });
+    }
+
     res.status(500).json({
       status: "error",
       message: "Error al crear la máquina",
     });
   }
 };
+
+const validateMachineryReference = async (req, res) => {
+  try {
+    const reference = req.query?.reference?.trim();
+    const excludeId =
+      req.query?.excludeId != null && req.query.excludeId !== ""
+        ? Number(req.query.excludeId)
+        : null;
+
+    if (!reference) {
+      return res.status(400).json({
+        status: "error",
+        message: "El código de la máquina es obligatorio",
+      });
+    }
+
+    const duplicateMachinery = await findMachineryByReference(reference, excludeId);
+
+    res.status(200).json({
+      status: "success",
+      message: duplicateMachinery
+        ? duplicateReferenceMessage
+        : "El código de la máquina está disponible",
+      data: {
+        available: !duplicateMachinery,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: "error",
+      message: "No se pudo validar el código de la máquina",
+    });
+  }
+};
+
 const getMachinery = async (req, res) => {
   try {
     const machinery = await prisma.machinery.findMany({
@@ -71,7 +161,6 @@ const getMachineryById = async (req, res) => {
 const updateMachinery = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, reference, type, is_active } = req.body;
     const machineryExists = await prisma.machinery.findUnique({
       where: { id: parseInt(id) },
     });
@@ -83,16 +172,46 @@ const updateMachinery = async (req, res) => {
       });
     }
 
+    const payload = normalizeMachineryPayload(req.body, machineryExists.is_active);
+
+    if (!payload.name) {
+      return res.status(400).json({
+        status: "error",
+        message: "El nombre de la máquina es obligatorio",
+      });
+    }
+
+    if (!payload.reference) {
+      return res.status(400).json({
+        status: "error",
+        message: "La referencia de la máquina es obligatoria",
+      });
+    }
+
+    if (!payload.type || !isValidMachineryType(payload.type)) {
+      return res.status(400).json({
+        status: "error",
+        message: "El tipo de maquinaria seleccionado no es válido",
+      });
+    }
+
+    const duplicateMachinery = await findMachineryByReference(
+      payload.reference,
+      machineryExists.id,
+    );
+
+    if (duplicateMachinery) {
+      return res.status(409).json({
+        status: "warning",
+        message: duplicateReferenceMessage,
+      });
+    }
+
     const machinery = await prisma.machinery.update({
       where: {
         id: parseInt(id),
       },
-      data: {
-        name,
-        reference,
-        type,
-        is_active: normalizeIsActive(is_active, machineryExists.is_active),
-      },
+      data: payload,
     });
     res.status(200).json({
       status: "success",
@@ -100,9 +219,16 @@ const updateMachinery = async (req, res) => {
       data: machinery,
     });
   } catch (error) {
+    if (error?.code === "P2002") {
+      return res.status(409).json({
+        status: "warning",
+        message: duplicateReferenceMessage,
+      });
+    }
+
     res.status(500).json({
       status: "error",
-      message: "Error al actualizar la máquina",
+      message: "No se pudo actualizar la máquina",
     });
   }
 };
@@ -142,6 +268,7 @@ const deleteMachinery = async (req, res) => {
 
 export {
   createMachinery,
+  validateMachineryReference,
   getMachinery,
   getMachineryById,
   updateMachinery,

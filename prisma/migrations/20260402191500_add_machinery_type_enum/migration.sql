@@ -1,0 +1,56 @@
+-- CreateEnum
+CREATE TYPE "Machinery_Type" AS ENUM (
+  'PREPRENSA',
+  'GUILLOTINA',
+  'IMPRESORA_OFFSET',
+  'IMPRESORA_DIGITAL',
+  'PLASTIFICADORA',
+  'LAMINADORA',
+  'BARNIZADORA',
+  'ESTAMPADORA',
+  'TROQUELADORA',
+  'PEGADORA',
+  'DOBLADORA',
+  'EMPAQUE',
+  'OTRA'
+);
+
+-- AlterTable
+ALTER TABLE "machinery"
+ADD COLUMN "type_new" "Machinery_Type";
+
+UPDATE "machinery"
+SET "type_new" = CASE "type"
+  WHEN 'PREPRENSA' THEN 'PREPRENSA'::"Machinery_Type"
+  WHEN 'CORTE' THEN 'GUILLOTINA'::"Machinery_Type"
+  WHEN 'GUILLOTINA' THEN 'GUILLOTINA'::"Machinery_Type"
+  WHEN 'IMPRESION' THEN 'IMPRESORA_OFFSET'::"Machinery_Type"
+  WHEN 'IMPRESORA_OFFSET' THEN 'IMPRESORA_OFFSET'::"Machinery_Type"
+  WHEN 'IMPRESORA_DIGITAL' THEN 'IMPRESORA_DIGITAL'::"Machinery_Type"
+  WHEN 'PLASTIFICADO' THEN 'PLASTIFICADORA'::"Machinery_Type"
+  WHEN 'PLASTIFICADORA' THEN 'PLASTIFICADORA'::"Machinery_Type"
+  WHEN 'LAMINADO' THEN 'LAMINADORA'::"Machinery_Type"
+  WHEN 'LAMINADORA' THEN 'LAMINADORA'::"Machinery_Type"
+  WHEN 'BARNIZADO' THEN 'BARNIZADORA'::"Machinery_Type"
+  WHEN 'BARNIZADORA' THEN 'BARNIZADORA'::"Machinery_Type"
+  WHEN 'ESTAMPADO' THEN 'ESTAMPADORA'::"Machinery_Type"
+  WHEN 'ESTAMPADORA' THEN 'ESTAMPADORA'::"Machinery_Type"
+  WHEN 'TROQUELADO' THEN 'TROQUELADORA'::"Machinery_Type"
+  WHEN 'TROQUELADORA' THEN 'TROQUELADORA'::"Machinery_Type"
+  WHEN 'PEGADO' THEN 'PEGADORA'::"Machinery_Type"
+  WHEN 'PEGADORA' THEN 'PEGADORA'::"Machinery_Type"
+  WHEN 'DOBLADO' THEN 'DOBLADORA'::"Machinery_Type"
+  WHEN 'DOBLADORA' THEN 'DOBLADORA'::"Machinery_Type"
+  WHEN 'EMPAQUE' THEN 'EMPAQUE'::"Machinery_Type"
+  WHEN 'OTRA' THEN 'OTRA'::"Machinery_Type"
+  ELSE 'OTRA'::"Machinery_Type"
+END;
+
+ALTER TABLE "machinery"
+ALTER COLUMN "type_new" SET NOT NULL;
+
+ALTER TABLE "machinery"
+DROP COLUMN "type";
+
+ALTER TABLE "machinery"
+RENAME COLUMN "type_new" TO "type";
