@@ -25,6 +25,18 @@ enum Thirds_type {
   OTROS
 }
 
+enum Person_Type {
+  NATURAL
+  JURIDICA
+}
+
+enum Document_Type {
+  NIT
+  CC
+  CE
+  PASAPORTE
+}
+
 enum Size {
   SMALL
   MEDIUM
@@ -219,6 +231,9 @@ model Thirds {
   email        String?      @unique
   address      String?
   type_person  Thirds_type? @default(CLIENTE)
+  person_type  Person_Type?
+  document_type Document_Type?
+  document_number String?
   company_name String?
 
   is_active Boolean @default(true)
@@ -226,6 +241,7 @@ model Thirds {
   product_customers Product_Customer[]
   paper_type_suppliers PaperTypeSupplier[]
 
+  @@unique([document_type, document_number])
   @@map("thirds")
 }
 
