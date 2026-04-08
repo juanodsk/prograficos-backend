@@ -1,6 +1,17 @@
 import { prisma } from "../config/db.js";
 import { emitProductionChange } from "../utils/realtime.js";
 
+const finishedOrderStatuses = ["TERMINADO", "ENTREGADO"];
+const activeOrderStatuses = ["PENDIENTE", "EN_PROCESO"];
+const knownOrderStatuses = [
+  "PENDIENTE",
+  "EN_PROCESO",
+  "TERMINADO",
+  "ENTREGADO",
+];
+const defaultPageSize = 10;
+const maxPageSize = 50;
+
 const orderInclude = {
   product_customer: {
     include: {
@@ -42,6 +53,30 @@ const orderInclude = {
     orderBy: {
       process: {
         order: "asc",
+      },
+    },
+  },
+};
+
+const orderListSelect = {
+  id: true,
+  date: true,
+  date_delivery_estimated: true,
+  order_status: true,
+  amount_sheets: true,
+  total_estimated: true,
+  product_customer: {
+    select: {
+      name: true,
+      third: {
+        select: {
+          name: true,
+        },
+      },
+      product: {
+        select: {
+          name: true,
+        },
       },
     },
   },
@@ -109,6 +144,163 @@ const auditOrderInclude = {
 
 const parseOrderId = (id) => parseInt(id, 10);
 
+const parsePagination = (query) => {
+  const requestedPage = Number.parseInt(query?.page, 10);
+  const requestedPageSize = Number.parseInt(query?.pageSize, 10);
+
+  return {
+    page: Number.isNaN(requestedPage) || requestedPage < 1 ? 1 : requestedPage,
+    pageSize: Number.isNaN(requestedPageSize)
+      ? defaultPageSize
+      : Math.min(Math.max(requestedPageSize, 1), maxPageSize),
+  };
+};
+
+const buildPaginationMeta = (requestedPage, pageSize, total) => {
+  const totalPages = total > 0 ? Math.ceil(total / pageSize) : 1;
+  const page = Math.min(requestedPage, totalPages);
+
+  return {
+    page,
+    pageSize,
+    total,
+    totalPages,
+    hasPreviousPage: page > 1,
+    hasNextPage: page < totalPages,
+  };
+};
+
+const buildOrderStatusFilter = (statusGroup) => {
+  if (statusGroup === "finished") {
+    return {
+      order_status: {
+        in: finishedOrderStatuses,
+      },
+    };
+  }
+
+  if (statusGroup === "active") {
+    return {
+      order_status: {
+        in: activeOrderStatuses,
+      },
+    };
+  }
+
+  return null;
+};
+
+const buildInsensitiveContains = (value) => ({
+  contains: value,
+  mode: "insensitive",
+});
+
+const buildOrderSearchFilter = (rawSearch, options = {}) => {
+  const search = rawSearch?.trim();
+
+  if (!search) {
+    return null;
+  }
+
+  const normalizedSearch = search.toLowerCase();
+  const numericSearch = Number.parseInt(search, 10);
+  const matchedStatuses = knownOrderStatuses.filter((status) =>
+    status.toLowerCase().includes(normalizedSearch),
+  );
+
+  const or = [
+    {
+      product_customer: {
+        is: {
+          name: buildInsensitiveContains(search),
+        },
+      },
+    },
+    {
+      product_customer: {
+        is: {
+          third: {
+            is: {
+              name: buildInsensitiveContains(search),
+            },
+          },
+        },
+      },
+    },
+    {
+      product_customer: {
+        is: {
+          product: {
+            is: {
+              name: buildInsensitiveContains(search),
+            },
+          },
+        },
+      },
+    },
+  ];
+
+  if (!Number.isNaN(numericSearch)) {
+    or.push({ id: numericSearch });
+  }
+
+  if (matchedStatuses.length > 0) {
+    or.push({
+      order_status: {
+        in: matchedStatuses,
+      },
+    });
+  }
+
+  if (options.includeAuditActors) {
+    or.push({
+      user: {
+        is: {
+          OR: [
+            { name: buildInsensitiveContains(search) },
+            { surename: buildInsensitiveContains(search) },
+            { email: buildInsensitiveContains(search) },
+          ],
+        },
+      },
+    });
+
+    or.push({
+      detail_production_orders: {
+        some: {
+          user: {
+            is: {
+              OR: [
+                { name: buildInsensitiveContains(search) },
+                { surename: buildInsensitiveContains(search) },
+                { email: buildInsensitiveContains(search) },
+              ],
+            },
+          },
+        },
+      },
+    });
+  }
+
+  return { OR: or };
+};
+
+const buildWhere = (...filters) => {
+  const validFilters = filters.filter(Boolean);
+
+  if (validFilters.length === 0) {
+    return {};
+  }
+
+  if (validFilters.length === 1) {
+    return validFilters[0];
+  }
+
+  return {
+    AND: validFilters,
+  };
+};
+
 const getClosingProcess = (details = []) =>
   [...details]
     .reverse()
@@ -138,6 +330,43 @@ const attachOrderAuditSummary = (order) => {
       delivered_total: deliveredTotal,
       damaged_total: order.total_damaged ?? damagedTotal,
     },
+  };
+};
+
+const buildAuditSummary = (orders = []) => {
+  const users = new Set();
+
+  const totals = orders.reduce(
+    (accumulator, order) => {
+      const details = order.detail_production_orders || [];
+      const closingProcess = getClosingProcess(details);
+      const deliveredTotal =
+        order.total_delivered ?? closingProcess?.quantity_delivered ?? 0;
+      const damagedTotal =
+        order.total_damaged ??
+        details.reduce(
+          (detailTotal, detail) => detailTotal + (detail.quantity_damaged || 0),
+          0,
+        );
+
+      details.forEach((detail) => {
+        if (detail.user_id) {
+          users.add(detail.user_id);
+        }
+      });
+
+      accumulator.deliveredTotal += deliveredTotal;
+      accumulator.damagedTotal += damagedTotal;
+      return accumulator;
+    },
+    { deliveredTotal: 0, damagedTotal: 0 },
+  );
+
+  return {
+    totalClosed: orders.length,
+    deliveredTotal: totals.deliveredTotal,
+    damagedTotal: totals.damagedTotal,
+    operators: users.size,
   };
 };
 
@@ -330,15 +559,82 @@ const createOrder = async (req, res) => {
 
 const getOrders = async (req, res) => {
   try {
+    const { page: requestedPage, pageSize } = parsePagination(req.query);
+    const statusGroup =
+      req.query?.statusGroup === "finished" ? "finished" : "active";
+    const searchFilter = buildOrderSearchFilter(req.query?.search);
+    const baseWhere = { is_active: true };
+    const listWhere = buildWhere(
+      baseWhere,
+      buildOrderStatusFilter(statusGroup),
+      searchFilter,
+    );
+    const filteredWhere = buildWhere(baseWhere, searchFilter);
+
+    const [
+      total,
+      summaryTotal,
+      pendingCount,
+      progressCount,
+      finishedCount,
+      activeTabCount,
+      finishedTabCount,
+    ] = await Promise.all([
+      prisma.header_Production_Order.count({ where: listWhere }),
+      prisma.header_Production_Order.count({ where: baseWhere }),
+      prisma.header_Production_Order.count({
+        where: buildWhere(baseWhere, { order_status: "PENDIENTE" }),
+      }),
+      prisma.header_Production_Order.count({
+        where: buildWhere(baseWhere, { order_status: "EN_PROCESO" }),
+      }),
+      prisma.header_Production_Order.count({
+        where: buildWhere(baseWhere, {
+          order_status: {
+            in: finishedOrderStatuses,
+          },
+        }),
+      }),
+      prisma.header_Production_Order.count({
+        where: buildWhere(filteredWhere, {
+          order_status: {
+            in: activeOrderStatuses,
+          },
+        }),
+      }),
+      prisma.header_Production_Order.count({
+        where: buildWhere(filteredWhere, {
+          order_status: {
+            in: finishedOrderStatuses,
+          },
+        }),
+      }),
+    ]);
+
+    const meta = buildPaginationMeta(requestedPage, pageSize, total);
+
     const orders = await prisma.header_Production_Order.findMany({
-      where: { is_active: true },
-      include: orderInclude,
+      where: listWhere,
+      select: orderListSelect,
       orderBy: { date: "desc" },
+      skip: (meta.page - 1) * meta.pageSize,
+      take: meta.pageSize,
     });
 
     res.status(200).json({
       status: "success",
       data: orders,
+      meta,
+      summary: {
+        total: summaryTotal,
+        pending: pendingCount,
+        progress: progressCount,
+        finished: finishedCount,
+      },
+      tabs: {
+        active: activeTabCount,
+        finished: finishedTabCount,
+      },
     });
   } catch (error) {
     console.error(error);
@@ -351,23 +647,59 @@ const getOrders = async (req, res) => {
 
 const getClosedOrdersAudit = async (req, res) => {
   try {
-    const orders = await prisma.header_Production_Order.findMany({
-      where: {
-        is_active: true,
-        order_status: {
-          in: ["TERMINADO", "ENTREGADO"],
-        },
+    const { page: requestedPage, pageSize } = parsePagination(req.query);
+    const closedWhere = {
+      is_active: true,
+      order_status: {
+        in: finishedOrderStatuses,
       },
+    };
+    const searchFilter = buildOrderSearchFilter(req.query?.search, {
+      includeAuditActors: true,
+    });
+    const listWhere = buildWhere(closedWhere, searchFilter);
+
+    const [total, summaryOrders] = await Promise.all([
+      prisma.header_Production_Order.count({ where: listWhere }),
+      prisma.header_Production_Order.findMany({
+        where: closedWhere,
+        select: {
+          id: true,
+          total_delivered: true,
+          total_damaged: true,
+          detail_production_orders: {
+            select: {
+              quantity_delivered: true,
+              quantity_damaged: true,
+              process_state: true,
+              end_hour: true,
+              end_date: true,
+              user_id: true,
+            },
+            orderBy: [{ process: { order: "asc" } }, { id: "asc" }],
+          },
+        },
+      }),
+    ]);
+
+    const meta = buildPaginationMeta(requestedPage, pageSize, total);
+
+    const orders = await prisma.header_Production_Order.findMany({
+      where: listWhere,
       include: auditOrderInclude,
       orderBy: {
         date: "desc",
       },
+      skip: (meta.page - 1) * meta.pageSize,
+      take: meta.pageSize,
     });
 
     res.status(200).json({
       status: "success",
       message: "Auditoría de órdenes cerradas obtenida exitosamente",
       data: orders.map(attachOrderAuditSummary),
+      meta,
+      summary: buildAuditSummary(summaryOrders),
     });
   } catch (error) {
     console.error(error);

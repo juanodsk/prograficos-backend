@@ -18,7 +18,7 @@ const normalizeFieldDefinitionInput = (field, index) => ({
       ? Number(field.id)
       : null,
   label: field?.label?.trim(),
-  key: toSnakeCase(field?.label?.trim() || field?.key?.trim() || ""),
+  key: toSnakeCase(field?.key?.trim() || field?.label?.trim() || ""),
   field_type: field?.field_type,
   is_required: Boolean(field?.is_required),
   sort_order: Number(field?.sort_order) || index + 1,
@@ -53,6 +53,84 @@ const validateFieldDefinitions = (fieldDefinitions = []) => {
   return null;
 };
 
+const findFieldDefinitionByKey = async (key, excludeFieldId = null) =>
+  prisma.process_Field_Definition.findFirst({
+    where: {
+      key: {
+        equals: key,
+        mode: "insensitive",
+      },
+      ...(excludeFieldId != null ? { id: { not: excludeFieldId } } : {}),
+    },
+    select: {
+      id: true,
+      key: true,
+      label: true,
+      process: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+  });
+
+const validateFieldDefinitionsUniqueness = async (fieldDefinitions = []) => {
+  for (const field of fieldDefinitions) {
+    const duplicateField = await findFieldDefinitionByKey(field.key, field.id);
+
+    if (duplicateField) {
+      return `La clave "${field.key}" ya está siendo utilizada en el proceso "${duplicateField.process?.name || duplicateField.process?.id}"`;
+    }
+  }
+
+  return null;
+};
+
+const validateProcessFieldKey = async (req, res) => {
+  try {
+    const key = toSnakeCase(req.query?.key?.trim() || "");
+    const excludeFieldId =
+      req.query?.excludeFieldId != null && req.query.excludeFieldId !== ""
+        ? Number(req.query.excludeFieldId)
+        : null;
+
+    if (!key) {
+      return res.status(400).json({
+        status: "error",
+        message: "La clave del campo es obligatoria",
+      });
+    }
+
+    if (excludeFieldId != null && Number.isNaN(excludeFieldId)) {
+      return res.status(400).json({
+        status: "error",
+        message: "El id del campo a excluir no es válido",
+      });
+    }
+
+    const duplicateField = await findFieldDefinitionByKey(key, excludeFieldId);
+
+    return res.status(200).json({
+      status: "success",
+      message: duplicateField
+        ? `La clave "${key}" ya está siendo utilizada`
+        : `La clave "${key}" está disponible`,
+      data: {
+        available: !duplicateField,
+        key,
+        duplicate: duplicateField,
+      },
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      status: "error",
+      message: "No se pudo validar la clave del campo",
+    });
+  }
+};
+
 const createProcess = async (req, res) => {
   try {
     const { name, order, category, is_active, field_definitions = [] } = req.body;
@@ -67,6 +145,17 @@ const createProcess = async (req, res) => {
       return res.status(400).json({
         status: "error",
         message: fieldDefinitionsError,
+      });
+    }
+
+    const duplicateFieldError = await validateFieldDefinitionsUniqueness(
+      normalizedFieldDefinitions,
+    );
+
+    if (duplicateFieldError) {
+      return res.status(409).json({
+        status: "warning",
+        message: duplicateFieldError,
       });
     }
 
@@ -180,6 +269,17 @@ const updateProcess = async (req, res) => {
       return res.status(400).json({
         status: "error",
         message: fieldDefinitionsError,
+      });
+    }
+
+    const duplicateFieldError = await validateFieldDefinitionsUniqueness(
+      normalizedFieldDefinitions,
+    );
+
+    if (duplicateFieldError) {
+      return res.status(409).json({
+        status: "warning",
+        message: duplicateFieldError,
       });
     }
 
@@ -396,6 +496,7 @@ export {
   createProcess,
   getProcesses,
   getProcessById,
+  validateProcessFieldKey,
   updateProcess,
   deleteProcess,
 };
