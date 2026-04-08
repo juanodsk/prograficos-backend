@@ -53,9 +53,14 @@ const validateFieldDefinitions = (fieldDefinitions = []) => {
   return null;
 };
 
-const findFieldDefinitionByKey = async (key, excludeFieldId = null) =>
+const findFieldDefinitionByKey = async (
+  processId,
+  key,
+  excludeFieldId = null,
+) =>
   prisma.process_Field_Definition.findFirst({
     where: {
+      process_id: processId,
       key: {
         equals: key,
         mode: "insensitive",
@@ -75,12 +80,23 @@ const findFieldDefinitionByKey = async (key, excludeFieldId = null) =>
     },
   });
 
-const validateFieldDefinitionsUniqueness = async (fieldDefinitions = []) => {
+const validateFieldDefinitionsUniqueness = async (
+  processId,
+  fieldDefinitions = [],
+) => {
+  if (!processId) {
+    return null;
+  }
+
   for (const field of fieldDefinitions) {
-    const duplicateField = await findFieldDefinitionByKey(field.key, field.id);
+    const duplicateField = await findFieldDefinitionByKey(
+      processId,
+      field.key,
+      field.id,
+    );
 
     if (duplicateField) {
-      return `La clave "${field.key}" ya está siendo utilizada en el proceso "${duplicateField.process?.name || duplicateField.process?.id}"`;
+      return `La clave "${field.key}" ya está siendo utilizada en este proceso`;
     }
   }
 
@@ -89,11 +105,19 @@ const validateFieldDefinitionsUniqueness = async (fieldDefinitions = []) => {
 
 const validateProcessFieldKey = async (req, res) => {
   try {
+    const processId = Number(req.query?.processId);
     const key = toSnakeCase(req.query?.key?.trim() || "");
     const excludeFieldId =
       req.query?.excludeFieldId != null && req.query.excludeFieldId !== ""
         ? Number(req.query.excludeFieldId)
         : null;
+
+    if (Number.isNaN(processId) || processId <= 0) {
+      return res.status(400).json({
+        status: "error",
+        message: "El proceso es obligatorio para validar la clave",
+      });
+    }
 
     if (!key) {
       return res.status(400).json({
@@ -109,7 +133,11 @@ const validateProcessFieldKey = async (req, res) => {
       });
     }
 
-    const duplicateField = await findFieldDefinitionByKey(key, excludeFieldId);
+    const duplicateField = await findFieldDefinitionByKey(
+      processId,
+      key,
+      excludeFieldId,
+    );
 
     return res.status(200).json({
       status: "success",
@@ -149,6 +177,7 @@ const createProcess = async (req, res) => {
     }
 
     const duplicateFieldError = await validateFieldDefinitionsUniqueness(
+      null,
       normalizedFieldDefinitions,
     );
 
@@ -273,6 +302,7 @@ const updateProcess = async (req, res) => {
     }
 
     const duplicateFieldError = await validateFieldDefinitionsUniqueness(
+      processId,
       normalizedFieldDefinitions,
     );
 
