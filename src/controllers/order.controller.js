@@ -645,6 +645,32 @@ const getOrders = async (req, res) => {
   }
 };
 
+const getBoardOrders = async (req, res) => {
+  try {
+    const orders = await prisma.header_Production_Order.findMany({
+      where: {
+        is_active: true,
+        order_status: {
+          in: activeOrderStatuses,
+        },
+      },
+      include: orderInclude,
+      orderBy: [{ date_delivery_estimated: "asc" }, { id: "asc" }],
+    });
+
+    res.status(200).json({
+      status: "success",
+      data: orders,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      status: "error",
+      message: "Error al obtener las órdenes del monitor",
+    });
+  }
+};
+
 const getClosedOrdersAudit = async (req, res) => {
   try {
     const { page: requestedPage, pageSize } = parsePagination(req.query);
@@ -965,6 +991,7 @@ const orderFinished = async (req, res) => {
 export {
   createOrder,
   getOrders,
+  getBoardOrders,
   getClosedOrdersAudit,
   getOrderById,
   updateOrder,
