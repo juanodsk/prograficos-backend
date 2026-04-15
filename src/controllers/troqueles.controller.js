@@ -1,6 +1,11 @@
 import { prisma } from "../config/db.js";
 import multer from "multer";
 import { buildActiveWhere, normalizeIsActive } from "../utils/active.js";
+import {
+  buildInsensitiveContains,
+  buildPaginationMeta,
+  parsePagination,
+} from "../utils/pagination.js";
 
 // Configuracion de multer para archivos en memoria (20MB maximo)
 const upload = multer({
@@ -9,6 +14,36 @@ const upload = multer({
 });
 
 const parseTroquelId = (id) => parseInt(id, 10);
+
+const knownSizes = ["SMALL", "MEDIUM", "LARGE"];
+
+const buildTroquelSearchWhere = (rawSearch) => {
+  const search = rawSearch?.trim();
+
+  if (!search) {
+    return {};
+  }
+
+  const numericSearch = Number.parseInt(search, 10);
+  const matchedSizes = knownSizes.filter((size) =>
+    size.toLowerCase().includes(search.toLowerCase()),
+  );
+
+  const or = [
+    { code: buildInsensitiveContains(search) },
+    { file_name: buildInsensitiveContains(search) },
+  ];
+
+  if (!Number.isNaN(numericSearch)) {
+    or.push({ id: numericSearch });
+  }
+
+  if (matchedSizes.length > 0) {
+    or.push({ size: { in: matchedSizes } });
+  }
+
+  return { OR: or };
+};
 
 // ───────────── CREAR TROQUEL ─────────────
 const createTroqueles = async (req, res) => {
@@ -52,15 +87,23 @@ const createTroqueles = async (req, res) => {
 // ───────────── OBTENER TODOS LOS TROQUELES ─────────────
 const getTroqueles = async (req, res) => {
   try {
+    const { page: requestedPage, pageSize } = parsePagination(req.query);
+    const where = buildActiveWhere(req.query, buildTroquelSearchWhere(req.query?.search));
+    const total = await prisma.troqueles.count({ where });
+    const meta = buildPaginationMeta(requestedPage, pageSize, total);
+
     const troqueles = await prisma.troqueles.findMany({
-      where: buildActiveWhere(req.query),
+      where,
       orderBy: { elaboration_date: "desc" },
+      skip: (meta.page - 1) * meta.pageSize,
+      take: meta.pageSize,
     });
 
     res.status(200).json({
       status: "success",
       message: "Troqueles obtenidos exitosamente",
       data: troqueles,
+      meta,
     });
   } catch (error) {
     console.error(error);

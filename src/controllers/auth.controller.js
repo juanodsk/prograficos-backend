@@ -1,6 +1,6 @@
 import { prisma } from "../config/db.js";
 import bcrypt from "bcryptjs";
-import { generateToken } from "../utils/generateToken.js";
+import { generateToken, resolveTokenCookieOptions } from "../utils/generateToken.js";
 
 const register = async (req, res) => {
   const { name, surename, email, password } = req.body;
@@ -90,6 +90,7 @@ const login = async (req, res) => {
 
 const logout = async (req, res) => {
   res.cookie("token", "", {
+    ...resolveTokenCookieOptions(),
     expires: new Date(0),
   });
   res.status(200).json({

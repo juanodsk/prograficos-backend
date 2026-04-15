@@ -1,10 +1,65 @@
 import { prisma } from "../config/db.js";
 import { buildActiveWhere, normalizeIsActive } from "../utils/active.js";
 import {
+  buildInsensitiveContains,
+  buildPaginationMeta,
+  parsePagination,
+} from "../utils/pagination.js";
+import {
   isValidDocumentType,
   isValidPersonType,
   isValidThirdType,
 } from "../constants/thirds.js";
+
+const knownThirdTypes = ["CLIENTE", "PROVEEDOR", "OTROS"];
+const knownPersonTypes = ["NATURAL", "JURIDICA"];
+const knownDocumentTypes = ["NIT", "CC", "CE", "PASAPORTE"];
+
+const buildThirdSearchWhere = (rawSearch) => {
+  const search = rawSearch?.trim();
+
+  if (!search) {
+    return {};
+  }
+
+  const numericSearch = Number.parseInt(search, 10);
+  const normalizedSearch = search.toLowerCase();
+  const matchedThirdTypes = knownThirdTypes.filter((value) =>
+    value.toLowerCase().includes(normalizedSearch),
+  );
+  const matchedPersonTypes = knownPersonTypes.filter((value) =>
+    value.toLowerCase().includes(normalizedSearch),
+  );
+  const matchedDocumentTypes = knownDocumentTypes.filter((value) =>
+    value.toLowerCase().includes(normalizedSearch),
+  );
+
+  const or = [
+    { name: buildInsensitiveContains(search) },
+    { email: buildInsensitiveContains(search) },
+    { address: buildInsensitiveContains(search) },
+    { company_name: buildInsensitiveContains(search) },
+    { document_number: buildInsensitiveContains(search) },
+  ];
+
+  if (!Number.isNaN(numericSearch)) {
+    or.push({ id: numericSearch });
+  }
+
+  if (matchedThirdTypes.length > 0) {
+    or.push({ type_person: { in: matchedThirdTypes } });
+  }
+
+  if (matchedPersonTypes.length > 0) {
+    or.push({ person_type: { in: matchedPersonTypes } });
+  }
+
+  if (matchedDocumentTypes.length > 0) {
+    or.push({ document_type: { in: matchedDocumentTypes } });
+  }
+
+  return { OR: or };
+};
 
 const normalizeThirdPayload = (body, fallbackIsActive = true) => ({
   name: body?.name?.trim(),
@@ -110,14 +165,22 @@ const createThirds = async (req, res) => {
 };
 const getThirds = async (req, res) => {
   try {
+    const { page: requestedPage, pageSize } = parsePagination(req.query);
+    const where = buildActiveWhere(req.query, buildThirdSearchWhere(req.query?.search));
+    const total = await prisma.thirds.count({ where });
+    const meta = buildPaginationMeta(requestedPage, pageSize, total);
+
     const thirds = await prisma.thirds.findMany({
-      where: buildActiveWhere(req.query),
+      where,
       orderBy: { name: "asc" },
+      skip: (meta.page - 1) * meta.pageSize,
+      take: meta.pageSize,
     });
     res.status(200).json({
       status: "success",
       message: "Terceros obtenidos exitosamente",
       data: { thirds },
+      meta,
     });
   } catch (error) {
     res

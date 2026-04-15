@@ -1,5 +1,10 @@
 import { prisma } from "../config/db.js";
 import { buildActiveWhere, normalizeIsActive } from "../utils/active.js";
+import {
+  buildInsensitiveContains,
+  buildPaginationMeta,
+  parsePagination,
+} from "../utils/pagination.js";
 
 const paperTypeInclude = {
   suppliers: {
@@ -31,6 +36,46 @@ const normalizeSupplierInput = (supplier) => ({
         ? Number(supplier.price)
         : null,
 });
+
+const buildPaperTypeSearchWhere = (rawSearch) => {
+  const search = rawSearch?.trim();
+
+  if (!search) {
+    return {};
+  }
+
+  const numericSearch = Number.parseInt(search, 10);
+  const grammageSearch = Number(search);
+  const or = [
+    { name: buildInsensitiveContains(search) },
+    { description: buildInsensitiveContains(search) },
+    {
+      suppliers: {
+        some: {
+          third: {
+            is: {
+              OR: [
+                { name: buildInsensitiveContains(search) },
+                { company_name: buildInsensitiveContains(search) },
+                { email: buildInsensitiveContains(search) },
+              ],
+            },
+          },
+        },
+      },
+    },
+  ];
+
+  if (!Number.isNaN(numericSearch)) {
+    or.push({ id: numericSearch });
+  }
+
+  if (!Number.isNaN(grammageSearch)) {
+    or.push({ grammage: grammageSearch });
+  }
+
+  return { OR: or };
+};
 
 const validatePaperTypePayload = async ({
   name,
@@ -189,15 +234,26 @@ const createPaperType = async (req, res) => {
 
 const getPaperType = async (req, res) => {
   try {
+    const { page: requestedPage, pageSize } = parsePagination(req.query);
+    const where = buildActiveWhere(
+      req.query,
+      buildPaperTypeSearchWhere(req.query?.search),
+    );
+    const total = await prisma.paper_Type.count({ where });
+    const meta = buildPaginationMeta(requestedPage, pageSize, total);
+
     const paperTypes = await prisma.paper_Type.findMany({
-      where: buildActiveWhere(req.query),
+      where,
       include: paperTypeInclude,
       orderBy: { name: "asc" },
+      skip: (meta.page - 1) * meta.pageSize,
+      take: meta.pageSize,
     });
     res.status(200).json({
       status: "success",
       message: "Tipos de papel obtenidos exitosamente",
       data: paperTypes,
+      meta,
     });
   } catch (error) {
     res.status(500).json({

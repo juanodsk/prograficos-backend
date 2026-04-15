@@ -647,20 +647,66 @@ const getOrders = async (req, res) => {
 
 const getBoardOrders = async (req, res) => {
   try {
-    const orders = await prisma.header_Production_Order.findMany({
-      where: {
-        is_active: true,
-        order_status: {
-          in: activeOrderStatuses,
-        },
+    const { page: requestedPage, pageSize } = parsePagination(req.query);
+    const boardWhere = {
+      is_active: true,
+      order_status: {
+        in: activeOrderStatuses,
       },
+    };
+    const total = await prisma.header_Production_Order.count({
+      where: boardWhere,
+    });
+    const meta = buildPaginationMeta(requestedPage, pageSize, total);
+
+    const orders = await prisma.header_Production_Order.findMany({
+      where: boardWhere,
       include: orderInclude,
       orderBy: [{ date_delivery_estimated: "asc" }, { id: "asc" }],
+      skip: (meta.page - 1) * meta.pageSize,
+      take: meta.pageSize,
     });
+
+    const [activeOrdersCount, activeProcessesCount] = await Promise.all([
+      prisma.header_Production_Order.count({
+        where: {
+          ...boardWhere,
+          OR: [
+            {
+              order_status: "EN_PROCESO",
+            },
+            {
+              detail_production_orders: {
+                some: {
+                  process_state: "EN_PROCESO",
+                },
+              },
+            },
+          ],
+        },
+      }),
+      prisma.detail_Production_Order.count({
+        where: {
+          process_state: "EN_PROCESO",
+          header_order: {
+            is_active: true,
+            order_status: {
+              in: activeOrderStatuses,
+            },
+          },
+        },
+      }),
+    ]);
 
     res.status(200).json({
       status: "success",
       data: orders,
+      meta,
+      summary: {
+        totalOrders: total,
+        activeOrders: activeOrdersCount,
+        activeProcesses: activeProcessesCount,
+      },
     });
   } catch (error) {
     console.error(error);
