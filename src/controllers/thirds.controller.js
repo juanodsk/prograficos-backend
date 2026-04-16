@@ -16,6 +16,24 @@ const knownThirdTypes = ["CLIENTE", "PROVEEDOR", "OTROS"];
 const knownPersonTypes = ["NATURAL", "JURIDICA"];
 const knownDocumentTypes = ["NIT", "CC", "CE", "PASAPORTE"];
 
+const thirdDetailInclude = {
+  products: {
+    include: {
+      troquel: {
+        select: {
+          id: true,
+          code: true,
+          size: true,
+          file_name: true,
+          elaboration_date: true,
+          is_active: true,
+        },
+      },
+    },
+    orderBy: [{ is_active: "desc" }, { name: "asc" }, { id: "asc" }],
+  },
+};
+
 const buildThirdSearchWhere = (rawSearch) => {
   const search = rawSearch?.trim();
 
@@ -60,6 +78,16 @@ const buildThirdSearchWhere = (rawSearch) => {
   }
 
   return { OR: or };
+};
+
+const buildThirdTypeWhere = (rawTypePerson) => {
+  const typePerson = rawTypePerson?.trim()?.toUpperCase();
+
+  if (!typePerson || !knownThirdTypes.includes(typePerson)) {
+    return {};
+  }
+
+  return { type_person: typePerson };
 };
 
 const thirdSortMap = {
@@ -184,7 +212,14 @@ const getThirds = async (req, res) => {
       fallbackSortBy: "name",
       fallbackSortDirection: "asc",
     });
-    const where = buildActiveWhere(req.query, buildThirdSearchWhere(req.query?.search));
+    const filters = [
+      buildThirdSearchWhere(req.query?.search),
+      buildThirdTypeWhere(req.query?.typePerson),
+    ].filter((filter) => Object.keys(filter).length > 0);
+    const where = buildActiveWhere(
+      req.query,
+      filters.length > 0 ? { AND: filters } : {},
+    );
     const total = await prisma.thirds.count({ where });
     const meta = buildPaginationMeta(requestedPage, pageSize, total);
 
@@ -211,6 +246,7 @@ const getThirdsById = async (req, res) => {
     const { id } = req.params;
     const third = await prisma.thirds.findUnique({
       where: { id: parseInt(id) },
+      include: thirdDetailInclude,
     });
     if (!third) {
       return res.status(404).json({
