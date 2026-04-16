@@ -5,6 +5,7 @@ import {
   buildInsensitiveContains,
   buildPaginationMeta,
   parsePagination,
+  parseSort,
 } from "../utils/pagination.js";
 
 // Configuracion de multer para archivos en memoria (20MB maximo)
@@ -43,6 +44,15 @@ const buildTroquelSearchWhere = (rawSearch) => {
   }
 
   return { OR: or };
+};
+
+const troquelSortMap = {
+  id: (direction) => [{ id: direction }],
+  code: (direction) => [{ code: direction }],
+  size: (direction) => [{ size: direction }],
+  elaboration_date: (direction) => [{ elaboration_date: direction }],
+  file: (direction) => [{ file_name: direction }],
+  is_active: (direction) => [{ is_active: direction }, { id: "asc" }],
 };
 
 // ───────────── CREAR TROQUEL ─────────────
@@ -87,14 +97,21 @@ const createTroqueles = async (req, res) => {
 // ───────────── OBTENER TODOS LOS TROQUELES ─────────────
 const getTroqueles = async (req, res) => {
   try {
-    const { page: requestedPage, pageSize } = parsePagination(req.query);
+    const { page: requestedPage, pageSize } = parsePagination(req.query, {
+      maxPageSize: 1000,
+    });
+    const { sortBy, sortDirection } = parseSort(req.query, {
+      allowedSortBy: Object.keys(troquelSortMap),
+      fallbackSortBy: "elaboration_date",
+      fallbackSortDirection: "desc",
+    });
     const where = buildActiveWhere(req.query, buildTroquelSearchWhere(req.query?.search));
     const total = await prisma.troqueles.count({ where });
     const meta = buildPaginationMeta(requestedPage, pageSize, total);
 
     const troqueles = await prisma.troqueles.findMany({
       where,
-      orderBy: { elaboration_date: "desc" },
+      orderBy: troquelSortMap[sortBy](sortDirection),
       skip: (meta.page - 1) * meta.pageSize,
       take: meta.pageSize,
     });

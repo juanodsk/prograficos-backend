@@ -13,10 +13,10 @@ const defaultPageSize = 10;
 const maxPageSize = 50;
 
 const orderInclude = {
-  product_customer: {
+  product: {
     include: {
       third: true,
-      product: true,
+      troquel: true,
     },
   },
   measure: {
@@ -65,17 +65,18 @@ const orderListSelect = {
   order_status: true,
   amount_sheets: true,
   total_estimated: true,
-  product_customer: {
+  product: {
     select: {
       name: true,
       third: {
         select: {
           name: true,
+          company_name: true,
         },
       },
-      product: {
+      troquel: {
         select: {
-          name: true,
+          code: true,
         },
       },
     },
@@ -83,10 +84,10 @@ const orderListSelect = {
 };
 
 const auditOrderInclude = {
-  product_customer: {
+  product: {
     include: {
       third: true,
-      product: true,
+      troquel: true,
     },
   },
   measure: {
@@ -195,6 +196,106 @@ const buildInsensitiveContains = (value) => ({
   mode: "insensitive",
 });
 
+const parseSheetDivisionsFromFormatName = (value) => {
+  const normalizedValue = value?.trim();
+
+  if (!normalizedValue) {
+    return null;
+  }
+
+  const fractionMatch = normalizedValue.match(/1\s*\/\s*(\d+)/i);
+
+  if (fractionMatch) {
+    const parsedDivisions = Number.parseInt(fractionMatch[1], 10);
+    return Number.isNaN(parsedDivisions) || parsedDivisions <= 0
+      ? null
+      : parsedDivisions;
+  }
+
+  return null;
+};
+
+const resolveSheetDivisions = (format) => {
+  const configuredDivisions = Number(format?.sheet_divisions);
+
+  if (Number.isInteger(configuredDivisions) && configuredDivisions > 0) {
+    return configuredDivisions;
+  }
+
+  return parseSheetDivisionsFromFormatName(format?.name) || 1;
+};
+
+const normalizePositiveInteger = (value) => {
+  const normalizedValue = Number(value);
+
+  if (!Number.isFinite(normalizedValue) || normalizedValue <= 0) {
+    return null;
+  }
+
+  return Math.ceil(normalizedValue);
+};
+
+const calculateOrderQuantities = ({
+  calculation_mode,
+  amount_sheets,
+  total_estimated,
+  cavities,
+  measure,
+}) => {
+  const normalizedCavities = normalizePositiveInteger(cavities);
+
+  if (!normalizedCavities) {
+    return {
+      error: "La cantidad de cavidades debe ser mayor a 0",
+    };
+  }
+
+  const sheetDivisions = resolveSheetDivisions(measure?.format);
+  const unitsPerSheet = sheetDivisions * normalizedCavities;
+  const normalizedAmountSheets = normalizePositiveInteger(amount_sheets);
+  const normalizedTotalEstimated = normalizePositiveInteger(total_estimated);
+
+  const effectiveMode =
+    calculation_mode === "SHEETS_REQUIRED" ||
+    calculation_mode === "TOTAL_REQUIRED"
+      ? calculation_mode
+      : normalizedTotalEstimated
+        ? "TOTAL_REQUIRED"
+        : "SHEETS_REQUIRED";
+
+  if (effectiveMode === "TOTAL_REQUIRED") {
+    if (!normalizedTotalEstimated) {
+      return {
+        error: "El total requerido debe ser mayor a 0",
+      };
+    }
+
+    return {
+      amount_sheets: Math.ceil(normalizedTotalEstimated / unitsPerSheet),
+      total_estimated: normalizedTotalEstimated,
+      cavities: normalizedCavities,
+      sheet_divisions: sheetDivisions,
+      units_per_sheet: unitsPerSheet,
+      calculation_mode: effectiveMode,
+    };
+  }
+
+  if (!normalizedAmountSheets) {
+    return {
+      error: "La cantidad de pliegos debe ser mayor a 0",
+    };
+  }
+
+  return {
+    amount_sheets: normalizedAmountSheets,
+    total_estimated: normalizedAmountSheets * unitsPerSheet,
+    cavities: normalizedCavities,
+    sheet_divisions: sheetDivisions,
+    units_per_sheet: unitsPerSheet,
+    calculation_mode: effectiveMode,
+  };
+};
+
 const buildOrderSearchFilter = (rawSearch, options = {}) => {
   const search = rawSearch?.trim();
 
@@ -210,14 +311,14 @@ const buildOrderSearchFilter = (rawSearch, options = {}) => {
 
   const or = [
     {
-      product_customer: {
+      product: {
         is: {
           name: buildInsensitiveContains(search),
         },
       },
     },
     {
-      product_customer: {
+      product: {
         is: {
           third: {
             is: {
@@ -228,11 +329,11 @@ const buildOrderSearchFilter = (rawSearch, options = {}) => {
       },
     },
     {
-      product_customer: {
+      product: {
         is: {
-          product: {
+          troquel: {
             is: {
-              name: buildInsensitiveContains(search),
+              code: buildInsensitiveContains(search),
             },
           },
         },
@@ -393,12 +494,14 @@ const deleteOrderDetailDependencies = async (tx, headerOrderId) => {
 
 const validateOrderPayload = async ({
   // date_delivery_estimated,
+  calculation_mode,
   amount_sheets,
+  cavities,
   total_estimated,
   measure_id,
   paper_type_id,
   troquel_id,
-  product_customer_id,
+  product_id,
   processes,
 }) => {
   // if (!date_delivery_estimated) {
@@ -407,6 +510,10 @@ const validateOrderPayload = async ({
 
   if (!amount_sheets || amount_sheets <= 0) {
     return "La cantidad de hojas debe ser mayor a 0";
+  }
+
+  if (!cavities || cavities <= 0) {
+    return "La cantidad de cavidades debe ser mayor a 0";
   }
 
   if (!total_estimated || total_estimated <= 0) {
@@ -425,12 +532,15 @@ const validateOrderPayload = async ({
     return "Los procesos enviados no son válidos";
   }
 
-  const [measure, paperType, troquel, productCustomer, existingProcesses] =
+  const [measure, paperType, troquel, product, existingProcesses] =
     await Promise.all([
       prisma.measure.findFirst({
         where: {
           id: Number(measure_id),
           is_active: true,
+        },
+        include: {
+          format: true,
         },
       }),
       prisma.paper_Type.findFirst({
@@ -445,10 +555,13 @@ const validateOrderPayload = async ({
           is_active: true,
         },
       }),
-      prisma.product_Customer.findFirst({
+      prisma.product.findFirst({
         where: {
-          id: Number(product_customer_id),
+          id: Number(product_id),
           is_active: true,
+        },
+        include: {
+          troquel: true,
         },
       }),
       prisma.process.findMany({
@@ -463,6 +576,18 @@ const validateOrderPayload = async ({
     return "La medida seleccionada no existe o está inactiva";
   }
 
+  const calculatedQuantities = calculateOrderQuantities({
+    calculation_mode,
+    amount_sheets,
+    total_estimated,
+    cavities,
+    measure,
+  });
+
+  if (calculatedQuantities.error) {
+    return calculatedQuantities.error;
+  }
+
   if (!paperType) {
     return "El tipo de papel seleccionado no existe o está inactivo";
   }
@@ -471,59 +596,73 @@ const validateOrderPayload = async ({
     return "El troquel seleccionado no existe o está inactivo";
   }
 
-  if (!productCustomer) {
-    return "El producto del cliente seleccionado no existe o está inactivo";
+  if (!product) {
+    return "El producto seleccionado no existe o está inactivo";
+  }
+
+  if (product.troquel_id !== Number(troquel_id)) {
+    return "El producto seleccionado no pertenece al troquel seleccionado";
   }
 
   if (existingProcesses.length !== processIds.length) {
     return "Uno o más procesos seleccionados no existen o están inactivos";
   }
 
-  return null;
+  return {
+    measure,
+    calculatedQuantities,
+  };
 };
 
 const createOrder = async (req, res) => {
   try {
     const {
       date_delivery_estimated,
+      calculation_mode,
       amount_sheets,
+      cavities,
       total_estimated,
       measure_id,
       paper_type_id,
       troquel_id,
-      product_customer_id,
+      product_id,
       processes,
     } = req.body;
 
-    const validationError = await validateOrderPayload({
+    const validationResult = await validateOrderPayload({
       date_delivery_estimated,
+      calculation_mode,
       amount_sheets: Number(amount_sheets),
+      cavities: Number(cavities),
       total_estimated: Number(total_estimated),
       measure_id,
       paper_type_id,
       troquel_id,
-      product_customer_id,
+      product_id,
       processes,
     });
 
-    if (validationError) {
+    if (typeof validationResult === "string") {
       return res.status(400).json({
         status: "error",
-        message: validationError,
+        message: validationResult,
       });
     }
+
+    const { calculatedQuantities } = validationResult;
 
     const order = await prisma.header_Production_Order.create({
       data: {
         date_delivery_estimated: date_delivery_estimated
           ? new Date(date_delivery_estimated)
           : null,
-        amount_sheets: Number(amount_sheets),
-        total_estimated: Number(total_estimated),
+        amount_sheets: calculatedQuantities.amount_sheets,
+        cavities: calculatedQuantities.cavities,
+        total_estimated: calculatedQuantities.total_estimated,
         measure_id: Number(measure_id),
         paper_type_id: Number(paper_type_id),
         troquel_id: Number(troquel_id),
-        product_customer_id: Number(product_customer_id),
+        product_id: Number(product_id),
         user_id: req.user.id,
         detail_production_orders: {
           create: [
@@ -864,33 +1003,39 @@ const updateOrder = async (req, res) => {
 
     const {
       date_delivery_estimated,
+      calculation_mode,
       amount_sheets,
+      cavities,
       total_estimated,
       measure_id,
       paper_type_id,
       troquel_id,
-      product_customer_id,
+      product_id,
       processes,
       order_status,
     } = req.body;
 
-    const validationError = await validateOrderPayload({
+    const validationResult = await validateOrderPayload({
       date_delivery_estimated,
+      calculation_mode,
       amount_sheets: Number(amount_sheets),
+      cavities: Number(cavities),
       total_estimated: Number(total_estimated),
       measure_id,
       paper_type_id,
       troquel_id,
-      product_customer_id,
+      product_id,
       processes,
     });
 
-    if (validationError) {
+    if (typeof validationResult === "string") {
       return res.status(400).json({
         status: "error",
-        message: validationError,
+        message: validationResult,
       });
     }
+
+    const { calculatedQuantities } = validationResult;
 
     const updatedOrder = await prisma.$transaction(async (tx) => {
       await deleteOrderDetailDependencies(tx, orderId);
@@ -898,13 +1043,16 @@ const updateOrder = async (req, res) => {
       return tx.header_Production_Order.update({
         where: { id: orderId },
         data: {
-          date_delivery_estimated: new Date(date_delivery_estimated),
-          amount_sheets: Number(amount_sheets),
-          total_estimated: Number(total_estimated),
+          date_delivery_estimated: date_delivery_estimated
+            ? new Date(date_delivery_estimated)
+            : null,
+          amount_sheets: calculatedQuantities.amount_sheets,
+          cavities: calculatedQuantities.cavities,
+          total_estimated: calculatedQuantities.total_estimated,
           measure_id: Number(measure_id),
           paper_type_id: Number(paper_type_id),
           troquel_id: Number(troquel_id),
-          product_customer_id: Number(product_customer_id),
+          product_id: Number(product_id),
           order_status: order_status || existingOrder.order_status,
           detail_production_orders: {
             create: [

@@ -6,13 +6,14 @@ const resolveTokenCookieOptions = () => {
     process.env.NODE_ENV === "production";
 
   const crossSiteCookies = process.env.COOKIE_CROSS_SITE !== "false";
+  const allowCrossSite = crossSiteCookies && secure;
 
   return {
     httpOnly: true,
     secure,
-    sameSite: crossSiteCookies ? "none" : "lax",
+    sameSite: allowCrossSite ? "none" : "lax",
     // Helps modern browsers accept third-party cookies in partitioned storage.
-    partitioned: crossSiteCookies,
+    partitioned: allowCrossSite,
   };
 };
 

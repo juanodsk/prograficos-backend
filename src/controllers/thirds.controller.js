@@ -4,6 +4,7 @@ import {
   buildInsensitiveContains,
   buildPaginationMeta,
   parsePagination,
+  parseSort,
 } from "../utils/pagination.js";
 import {
   isValidDocumentType,
@@ -59,6 +60,16 @@ const buildThirdSearchWhere = (rawSearch) => {
   }
 
   return { OR: or };
+};
+
+const thirdSortMap = {
+  id: (direction) => [{ id: direction }],
+  name: (direction) => [{ name: direction }],
+  email: (direction) => [{ email: direction }],
+  type_person: (direction) => [{ type_person: direction }, { name: "asc" }],
+  person_type: (direction) => [{ person_type: direction }, { name: "asc" }],
+  company_name: (direction) => [{ company_name: direction }, { name: "asc" }],
+  is_active: (direction) => [{ is_active: direction }, { name: "asc" }],
 };
 
 const normalizeThirdPayload = (body, fallbackIsActive = true) => ({
@@ -165,14 +176,21 @@ const createThirds = async (req, res) => {
 };
 const getThirds = async (req, res) => {
   try {
-    const { page: requestedPage, pageSize } = parsePagination(req.query);
+    const { page: requestedPage, pageSize } = parsePagination(req.query, {
+      maxPageSize: 1000,
+    });
+    const { sortBy, sortDirection } = parseSort(req.query, {
+      allowedSortBy: Object.keys(thirdSortMap),
+      fallbackSortBy: "name",
+      fallbackSortDirection: "asc",
+    });
     const where = buildActiveWhere(req.query, buildThirdSearchWhere(req.query?.search));
     const total = await prisma.thirds.count({ where });
     const meta = buildPaginationMeta(requestedPage, pageSize, total);
 
     const thirds = await prisma.thirds.findMany({
       where,
-      orderBy: { name: "asc" },
+      orderBy: thirdSortMap[sortBy](sortDirection),
       skip: (meta.page - 1) * meta.pageSize,
       take: meta.pageSize,
     });

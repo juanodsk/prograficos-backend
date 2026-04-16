@@ -175,6 +175,7 @@ model Machinery {
 model Format {
   id        Int     @id @default(autoincrement())
   name      String  @unique
+  sheet_divisions Int @default(1)
 
   is_active Boolean @default(true)
 
@@ -238,7 +239,7 @@ model Thirds {
 
   is_active Boolean @default(true)
 
-  product_customers Product_Customer[]
+  products Product[]
   paper_type_suppliers PaperTypeSupplier[]
 
   @@unique([document_type, document_number])
@@ -263,36 +264,20 @@ model PaperTypeSupplier {
 //////////////////////////////////////////////////////
 
 model Product {
-  id   Int    @id @default(autoincrement())
-  name String @unique
-
-  is_active Boolean @default(true)
-
-  product_customers Product_Customer[]
-
-  @@map("products")
-}
-
-//////////////////////////////////////////////////////
-// PRODUCT CUSTOMER
-//////////////////////////////////////////////////////
-
-model Product_Customer {
-  id   Int     @id @default(autoincrement())
-  code String? @unique
-  name String?
-
-  product_id Int
+  id         Int @id @default(autoincrement())
+  name       String?
+  troquel_id Int
   third_id   Int
 
   is_active Boolean @default(true)
 
-  product Product @relation(fields: [product_id], references: [id])
-  third   Thirds  @relation(fields: [third_id], references: [id])
+  troquel Troqueles @relation(fields: [troquel_id], references: [id])
+  third   Thirds    @relation(fields: [third_id], references: [id])
 
   header_production_orders Header_Production_Order[]
 
-  @@map("product_customer")
+  @@unique([troquel_id, third_id])
+  @@map("products")
 }
 
 //////////////////////////////////////////////////////
@@ -312,6 +297,7 @@ model Troqueles {
   is_active Boolean @default(true)
 
   header_production_orders Header_Production_Order[]
+  products                 Product[]
 
   @@map("troqueles")
 }
@@ -328,6 +314,7 @@ model Header_Production_Order {
   is_active               Boolean      @default(true)
 
   amount_sheets  Int
+  cavities       Int @default(1)
   total_estimated Int
   total_delivered Int?
   total_damaged   Int?
@@ -335,14 +322,14 @@ model Header_Production_Order {
   measure_id          Int
   paper_type_id       Int
   troquel_id          Int
-  product_customer_id Int
+  product_id          Int
   user_id             Int
 
   measure          Measure          @relation(fields: [measure_id], references: [id])
   paper_type       Paper_Type       @relation(fields: [paper_type_id], references: [id])
-  troquel          Troqueles        @relation(fields: [troquel_id], references: [id])
-  product_customer Product_Customer @relation(fields: [product_customer_id], references: [id])
-  user             User             @relation(fields: [user_id], references: [id])
+  troquel     Troqueles @relation(fields: [troquel_id], references: [id])
+  product     Product   @relation(fields: [product_id], references: [id])
+  user        User      @relation(fields: [user_id], references: [id])
 
   detail_production_orders Detail_Production_Order[]
 

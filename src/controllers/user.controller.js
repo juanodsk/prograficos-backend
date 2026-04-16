@@ -4,6 +4,7 @@ import {
   buildInsensitiveContains,
   buildPaginationMeta,
   parsePagination,
+  parseSort,
 } from "../utils/pagination.js";
 
 const knownRoles = ["ADMIN", "SUPERVISOR", "EMPLOYEE", "USER"];
@@ -37,9 +38,25 @@ const buildUserSearchWhere = (rawSearch) => {
   return { OR: or };
 };
 
+const userSortMap = {
+  name: (direction) => [{ name: direction }, { surename: direction }],
+  email: (direction) => [{ email: direction }],
+  role: (direction) => [{ role: direction }, { name: "asc" }],
+  is_active: (direction) => [
+    { is_active: direction },
+    { name: "asc" },
+    { surename: "asc" },
+  ],
+};
+
 const getUsers = async (req, res) => {
   try {
     const { page: requestedPage, pageSize } = parsePagination(req.query);
+    const { sortBy, sortDirection } = parseSort(req.query, {
+      allowedSortBy: Object.keys(userSortMap),
+      fallbackSortBy: "is_active",
+      fallbackSortDirection: "desc",
+    });
     const where = buildUserSearchWhere(req.query?.search);
     const total = await prisma.user.count({ where });
     const meta = buildPaginationMeta(requestedPage, pageSize, total);
@@ -56,7 +73,7 @@ const getUsers = async (req, res) => {
         is_active: true,
         createdAt: true,
       },
-      orderBy: [{ is_active: "desc" }, { name: "asc" }, { surename: "asc" }],
+      orderBy: userSortMap[sortBy](sortDirection),
       skip: (meta.page - 1) * meta.pageSize,
       take: meta.pageSize,
     });

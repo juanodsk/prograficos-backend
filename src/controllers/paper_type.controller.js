@@ -4,6 +4,7 @@ import {
   buildInsensitiveContains,
   buildPaginationMeta,
   parsePagination,
+  parseSort,
 } from "../utils/pagination.js";
 
 const paperTypeInclude = {
@@ -75,6 +76,14 @@ const buildPaperTypeSearchWhere = (rawSearch) => {
   }
 
   return { OR: or };
+};
+
+const paperTypeSortMap = {
+  id: (direction) => [{ id: direction }],
+  name: (direction) => [{ name: direction }],
+  description: (direction) => [{ description: direction }],
+  grammage: (direction) => [{ grammage: direction }],
+  is_active: (direction) => [{ is_active: direction }, { name: "asc" }],
 };
 
 const validatePaperTypePayload = async ({
@@ -235,6 +244,11 @@ const createPaperType = async (req, res) => {
 const getPaperType = async (req, res) => {
   try {
     const { page: requestedPage, pageSize } = parsePagination(req.query);
+    const { sortBy, sortDirection } = parseSort(req.query, {
+      allowedSortBy: Object.keys(paperTypeSortMap),
+      fallbackSortBy: "name",
+      fallbackSortDirection: "asc",
+    });
     const where = buildActiveWhere(
       req.query,
       buildPaperTypeSearchWhere(req.query?.search),
@@ -245,7 +259,7 @@ const getPaperType = async (req, res) => {
     const paperTypes = await prisma.paper_Type.findMany({
       where,
       include: paperTypeInclude,
-      orderBy: { name: "asc" },
+      orderBy: paperTypeSortMap[sortBy](sortDirection),
       skip: (meta.page - 1) * meta.pageSize,
       take: meta.pageSize,
     });

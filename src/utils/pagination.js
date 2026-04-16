@@ -1,5 +1,6 @@
 const defaultPageSize = 10;
 const defaultMaxPageSize = 50;
+const allowedSortDirections = ["asc", "desc"];
 
 export const parsePagination = (
   query = {},
@@ -34,3 +35,28 @@ export const buildInsensitiveContains = (value) => ({
   contains: value,
   mode: "insensitive",
 });
+
+export const parseSort = (
+  query = {},
+  {
+    allowedSortBy = [],
+    fallbackSortBy = null,
+    fallbackSortDirection = "asc",
+  } = {},
+) => {
+  const requestedSortBy =
+    typeof query?.sortBy === "string" ? query.sortBy.trim() : "";
+  const requestedSortDirection =
+    typeof query?.sortDirection === "string"
+      ? query.sortDirection.trim().toLowerCase()
+      : "";
+
+  return {
+    sortBy: allowedSortBy.includes(requestedSortBy)
+      ? requestedSortBy
+      : fallbackSortBy,
+    sortDirection: allowedSortDirections.includes(requestedSortDirection)
+      ? requestedSortDirection
+      : fallbackSortDirection,
+  };
+};

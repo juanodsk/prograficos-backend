@@ -1,0 +1,2 @@
+ALTER TABLE "formats"
+ADD COLUMN "sheet_divisions" INTEGER NOT NULL DEFAULT 1;
