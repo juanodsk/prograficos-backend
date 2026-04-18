@@ -325,11 +325,11 @@ model Header_Production_Order {
   product_id          Int
   user_id             Int
 
-  measure          Measure          @relation(fields: [measure_id], references: [id])
-  paper_type       Paper_Type       @relation(fields: [paper_type_id], references: [id])
-  troquel     Troqueles @relation(fields: [troquel_id], references: [id])
-  product     Product   @relation(fields: [product_id], references: [id])
-  user        User      @relation(fields: [user_id], references: [id])
+  measure    Measure    @relation(fields: [measure_id], references: [id])
+  paper_type Paper_Type @relation(fields: [paper_type_id], references: [id])
+  troquel    Troqueles  @relation(fields: [troquel_id], references: [id])
+  product    Product    @relation(fields: [product_id], references: [id])
+  user       User       @relation(fields: [user_id], references: [id])
 
   detail_production_orders Detail_Production_Order[]
 
