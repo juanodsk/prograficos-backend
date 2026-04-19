@@ -103,6 +103,16 @@ const validateFieldDefinitionsUniqueness = async (
   return null;
 };
 
+const normalizeProcessOrder = (value) => {
+  const parsedValue = Number.parseInt(value, 10);
+
+  if (Number.isNaN(parsedValue) || parsedValue <= 0) {
+    return null;
+  }
+
+  return parsedValue;
+};
+
 const validateProcessFieldKey = async (req, res) => {
   try {
     const processId = Number(req.query?.processId);
@@ -162,6 +172,7 @@ const validateProcessFieldKey = async (req, res) => {
 const createProcess = async (req, res) => {
   try {
     const { name, order, category, is_active, field_definitions = [] } = req.body;
+    const normalizedOrder = normalizeProcessOrder(order);
     const normalizedFieldDefinitions = field_definitions.map(
       normalizeFieldDefinitionInput,
     );
@@ -188,10 +199,16 @@ const createProcess = async (req, res) => {
       });
     }
 
+    const maxOrderResult = await prisma.process.aggregate({
+      _max: {
+        order: true,
+      },
+    });
+
     const process = await prisma.process.create({
       data: {
         name,
-        order,
+        order: normalizedOrder ?? (maxOrderResult._max.order || 0) + 1,
         category,
         is_active: normalizeIsActive(is_active, true),
         field_definitions: normalizedFieldDefinitions.length
@@ -287,6 +304,7 @@ const updateProcess = async (req, res) => {
     const { id } = req.params;
     const { name, order, category, is_active, field_definitions = [] } = req.body;
     const processId = parseInt(id, 10);
+    const normalizedOrder = normalizeProcessOrder(order);
     const normalizedFieldDefinitions = field_definitions.map(
       normalizeFieldDefinitionInput,
     );
@@ -317,6 +335,7 @@ const updateProcess = async (req, res) => {
       where: { id: processId },
       select: {
         id: true,
+        order: true,
         is_active: true,
         field_definitions: {
           include: {
@@ -403,7 +422,7 @@ const updateProcess = async (req, res) => {
         },
         data: {
           name,
-          order,
+          order: normalizedOrder ?? existingProcess.order,
           category,
           is_active: normalizeIsActive(is_active, existingProcess.is_active),
         },
@@ -478,6 +497,93 @@ const updateProcess = async (req, res) => {
   }
 };
 
+const reorderProcesses = async (req, res) => {
+  try {
+    const rawProcessIds = Array.isArray(req.body?.processIds)
+      ? req.body.processIds
+      : [];
+    const normalizedProcessIds = rawProcessIds.map((id) =>
+      Number.parseInt(id, 10),
+    );
+
+    if (!normalizedProcessIds.length) {
+      return res.status(400).json({
+        status: "error",
+        message: "Debes enviar al menos un proceso para reordenar",
+      });
+    }
+
+    if (normalizedProcessIds.some((id) => Number.isNaN(id) || id <= 0)) {
+      return res.status(400).json({
+        status: "error",
+        message: "Uno o más ids de proceso no son válidos",
+      });
+    }
+
+    const uniqueProcessIds = [...new Set(normalizedProcessIds)];
+
+    if (uniqueProcessIds.length !== normalizedProcessIds.length) {
+      return res.status(400).json({
+        status: "error",
+        message: "No puedes repetir procesos dentro del nuevo orden",
+      });
+    }
+
+    const existingProcesses = await prisma.process.findMany({
+      where: {
+        id: {
+          in: uniqueProcessIds,
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (existingProcesses.length !== uniqueProcessIds.length) {
+      return res.status(404).json({
+        status: "error",
+        message: "Uno o más procesos no existen",
+      });
+    }
+
+    await prisma.$transaction(
+      uniqueProcessIds.map((processId, index) =>
+        prisma.process.update({
+          where: {
+            id: processId,
+          },
+          data: {
+            order: index + 1,
+          },
+        }),
+      ),
+    );
+
+    const processes = await prisma.process.findMany({
+      where: buildActiveWhere(req.query),
+      include: {
+        field_definitions: {
+          orderBy: { sort_order: "asc" },
+        },
+      },
+      orderBy: [{ order: "asc" }, { name: "asc" }],
+    });
+
+    return res.status(200).json({
+      status: "success",
+      message: "Orden de procesos actualizado exitosamente",
+      data: processes,
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      status: "error",
+      message: "Error al reordenar los procesos",
+    });
+  }
+};
+
 const deleteProcess = async (req, res) => {
   try {
     const { id } = req.params;
@@ -528,5 +634,6 @@ export {
   getProcessById,
   validateProcessFieldKey,
   updateProcess,
+  reorderProcesses,
   deleteProcess,
 };

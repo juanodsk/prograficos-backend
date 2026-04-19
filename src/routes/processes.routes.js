@@ -7,6 +7,7 @@ import {
   getProcessById,
   validateProcessFieldKey,
   updateProcess,
+  reorderProcesses,
   deleteProcess,
 } from "../controllers/processes.controller.js";
 
@@ -29,6 +30,12 @@ router.get(
   verifyToken,
   authorizeRoles("ADMIN", "SUPERVISOR"),
   validateProcessFieldKey,
+);
+router.patch(
+  "/reorder",
+  verifyToken,
+  authorizeRoles("ADMIN", "SUPERVISOR"),
+  reorderProcesses,
 );
 router.get(
   "/:id",
