@@ -36,6 +36,11 @@ export const buildInsensitiveContains = (value) => ({
   mode: "insensitive",
 });
 
+export const buildInsensitiveEquals = (value) => ({
+  equals: value,
+  mode: "insensitive",
+});
+
 export const parseSort = (
   query = {},
   {

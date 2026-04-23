@@ -3,10 +3,12 @@ import multer from "multer";
 import { buildActiveWhere, normalizeIsActive } from "../utils/active.js";
 import {
   buildInsensitiveContains,
+  buildInsensitiveEquals,
   buildPaginationMeta,
   parsePagination,
   parseSort,
 } from "../utils/pagination.js";
+import { parseTroquelSearchTerm } from "../utils/troquel.js";
 
 // Configuracion de multer para archivos en memoria (20MB maximo)
 const upload = multer({
@@ -17,6 +19,21 @@ const upload = multer({
 const parseTroquelId = (id) => parseInt(id, 10);
 
 const knownSizes = ["SMALL", "MEDIUM", "LARGE"];
+const duplicateCodeMessage =
+  "El código del troquel ya está siendo utilizado para ese tamaño";
+
+const findTroquelBySizeAndCode = ({ code, size, excludeId = null }) =>
+  prisma.troqueles.findFirst({
+    where: {
+      code: {
+        equals: code,
+        mode: "insensitive",
+      },
+      size,
+      ...(excludeId != null ? { id: { not: excludeId } } : {}),
+    },
+    select: { id: true },
+  });
 
 const buildTroquelSearchWhere = (rawSearch) => {
   const search = rawSearch?.trim();
@@ -26,9 +43,39 @@ const buildTroquelSearchWhere = (rawSearch) => {
   }
 
   const numericSearch = Number.parseInt(search, 10);
+  const isNumericSearch = /^\d+$/.test(search);
   const matchedSizes = knownSizes.filter((size) =>
     size.toLowerCase().includes(search.toLowerCase()),
   );
+  const parsedTroquelCode = parseTroquelSearchTerm(search);
+
+  if (parsedTroquelCode?.size && !parsedTroquelCode.code) {
+    return {
+      size: parsedTroquelCode.size,
+    };
+  }
+
+  if (
+    parsedTroquelCode?.size &&
+    parsedTroquelCode.code &&
+    /^\d+$/.test(parsedTroquelCode.code)
+  ) {
+    return {
+      AND: [
+        { size: parsedTroquelCode.size },
+        { code: buildInsensitiveEquals(parsedTroquelCode.code) },
+      ],
+    };
+  }
+
+  if (isNumericSearch) {
+    return {
+      OR: [
+        { code: buildInsensitiveEquals(search) },
+        ...(!Number.isNaN(numericSearch) ? [{ id: numericSearch }] : []),
+      ],
+    };
+  }
 
   const or = [
     { code: buildInsensitiveContains(search) },
@@ -41,6 +88,15 @@ const buildTroquelSearchWhere = (rawSearch) => {
 
   if (matchedSizes.length > 0) {
     or.push({ size: { in: matchedSizes } });
+  }
+
+  if (parsedTroquelCode?.size && parsedTroquelCode.code) {
+    or.push({
+      AND: [
+        { size: parsedTroquelCode.size },
+        { code: buildInsensitiveContains(parsedTroquelCode.code) },
+      ],
+    });
   }
 
   return { OR: or };
@@ -58,8 +114,23 @@ const troquelSortMap = {
 // ───────────── CREAR TROQUEL ─────────────
 const createTroqueles = async (req, res) => {
   try {
-    const { elaboration_date, size, is_active } = req.body;
+    const { code, elaboration_date, size, is_active } = req.body;
     const file = req.file;
+    const normalizedCode = code?.trim();
+
+    if (!normalizedCode) {
+      return res.status(400).json({
+        status: "error",
+        message: "El código del troquel es obligatorio",
+      });
+    }
+
+    if (!size || !knownSizes.includes(size)) {
+      return res.status(400).json({
+        status: "error",
+        message: "El tamaño del troquel es obligatorio",
+      });
+    }
 
     if (!file) {
       return res.status(400).json({
@@ -68,8 +139,21 @@ const createTroqueles = async (req, res) => {
       });
     }
 
+    const duplicateTroquel = await findTroquelBySizeAndCode({
+      code: normalizedCode,
+      size,
+    });
+
+    if (duplicateTroquel) {
+      return res.status(409).json({
+        status: "warning",
+        message: duplicateCodeMessage,
+      });
+    }
+
     const troquel = await prisma.troqueles.create({
       data: {
+        code: normalizedCode,
         elaboration_date: elaboration_date
           ? new Date(elaboration_date)
           : new Date(),
@@ -87,6 +171,14 @@ const createTroqueles = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
+
+    if (error?.code === "P2002") {
+      return res.status(409).json({
+        status: "warning",
+        message: duplicateCodeMessage,
+      });
+    }
+
     res.status(500).json({
       status: "error",
       message: "Error al crear troquel",
@@ -105,7 +197,10 @@ const getTroqueles = async (req, res) => {
       fallbackSortBy: "elaboration_date",
       fallbackSortDirection: "desc",
     });
-    const where = buildActiveWhere(req.query, buildTroquelSearchWhere(req.query?.search));
+    const where = buildActiveWhere(
+      req.query,
+      buildTroquelSearchWhere(req.query?.search),
+    );
     const total = await prisma.troqueles.count({ where });
     const meta = buildPaginationMeta(requestedPage, pageSize, total);
 
@@ -172,7 +267,8 @@ const getTroquelesById = async (req, res) => {
 const updateTroqueles = async (req, res) => {
   try {
     const troquelId = parseTroquelId(req.params.id);
-    const { elaboration_date, size, is_active } = req.body;
+    const { code, elaboration_date, size, is_active } = req.body;
+    const normalizedCode = code?.trim();
 
     if (Number.isNaN(troquelId)) {
       return res.status(400).json({
@@ -192,11 +288,41 @@ const updateTroqueles = async (req, res) => {
       });
     }
 
+    if (!normalizedCode) {
+      return res.status(400).json({
+        status: "error",
+        message: "El código del troquel es obligatorio",
+      });
+    }
+
+    const normalizedSize = size || troquelExists.size;
+
+    if (!normalizedSize || !knownSizes.includes(normalizedSize)) {
+      return res.status(400).json({
+        status: "error",
+        message: "El tamaño del troquel es obligatorio",
+      });
+    }
+
+    const duplicateTroquel = await findTroquelBySizeAndCode({
+      code: normalizedCode,
+      size: normalizedSize,
+      excludeId: troquelId,
+    });
+
+    if (duplicateTroquel) {
+      return res.status(409).json({
+        status: "warning",
+        message: duplicateCodeMessage,
+      });
+    }
+
     const dataToUpdate = {
+      code: normalizedCode,
       elaboration_date: elaboration_date
         ? new Date(elaboration_date)
         : troquelExists.elaboration_date,
-      size: size || troquelExists.size,
+      size: normalizedSize,
       is_active: normalizeIsActive(is_active, troquelExists.is_active),
     };
 
@@ -217,6 +343,14 @@ const updateTroqueles = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
+
+    if (error?.code === "P2002") {
+      return res.status(409).json({
+        status: "warning",
+        message: duplicateCodeMessage,
+      });
+    }
+
     res.status(500).json({
       status: "error",
       message: "Error al actualizar troquel",

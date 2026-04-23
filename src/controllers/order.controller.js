@@ -1,5 +1,6 @@
 import { prisma } from "../config/db.js";
 import { emitProductionChange } from "../utils/realtime.js";
+import { parseTroquelSearchTerm } from "../utils/troquel.js";
 
 const finishedOrderStatuses = ["TERMINADO", "ENTREGADO"];
 const activeOrderStatuses = ["PENDIENTE", "EN_PROCESO"];
@@ -77,6 +78,7 @@ const orderListSelect = {
       troquel: {
         select: {
           code: true,
+          size: true,
         },
       },
     },
@@ -305,6 +307,7 @@ const buildOrderSearchFilter = (rawSearch, options = {}) => {
 
   const normalizedSearch = search.toLowerCase();
   const numericSearch = Number.parseInt(search, 10);
+  const parsedTroquelSearch = parseTroquelSearchTerm(search);
   const matchedStatuses = knownOrderStatuses.filter((status) =>
     status.toLowerCase().includes(normalizedSearch),
   );
@@ -340,6 +343,21 @@ const buildOrderSearchFilter = (rawSearch, options = {}) => {
       },
     },
   ];
+
+  if (parsedTroquelSearch?.size && parsedTroquelSearch.code) {
+    or.push({
+      product: {
+        is: {
+          troquel: {
+            is: {
+              size: parsedTroquelSearch.size,
+              code: buildInsensitiveContains(parsedTroquelSearch.code),
+            },
+          },
+        },
+      },
+    });
+  }
 
   if (!Number.isNaN(numericSearch)) {
     or.push({ id: numericSearch });

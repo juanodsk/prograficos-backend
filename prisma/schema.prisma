@@ -276,7 +276,6 @@ model Product {
 
   header_production_orders Header_Production_Order[]
 
-  @@unique([troquel_id, third_id])
   @@map("products")
 }
 
@@ -287,7 +286,7 @@ model Product {
 model Troqueles {
   id               Int      @id @default(autoincrement())
   elaboration_date DateTime @default(now())
-  code             String?  @unique
+  code             String?
   size             Size
   file_name        String? 
   file             String
@@ -299,6 +298,7 @@ model Troqueles {
   header_production_orders Header_Production_Order[]
   products                 Product[]
 
+  @@unique([size, code])
   @@map("troqueles")
 }
 

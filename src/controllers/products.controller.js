@@ -6,6 +6,7 @@ import {
   parsePagination,
   parseSort,
 } from "../utils/pagination.js";
+import { parseTroquelSearchTerm } from "../utils/troquel.js";
 
 const productInclude = {
   troquel: {
@@ -38,6 +39,7 @@ const buildProductSearchWhere = (rawSearch) => {
 
   const numericSearch = Number.parseInt(search, 10);
   const normalizedSearch = search.toLowerCase();
+  const parsedTroquelSearch = parseTroquelSearchTerm(search);
   const or = [
     { name: buildInsensitiveContains(search) },
     {
@@ -69,6 +71,17 @@ const buildProductSearchWhere = (rawSearch) => {
       },
     },
   ];
+
+  if (parsedTroquelSearch?.size && parsedTroquelSearch.code) {
+    or.push({
+      troquel: {
+        is: {
+          size: parsedTroquelSearch.size,
+          code: buildInsensitiveContains(parsedTroquelSearch.code),
+        },
+      },
+    });
+  }
 
   if (!Number.isNaN(numericSearch)) {
     or.push({ id: numericSearch });
@@ -130,7 +143,7 @@ const validateProductPayload = async (payload, currentProductId = null) => {
     return "Debes seleccionar un tercero";
   }
 
-  const [troquel, third, duplicate] = await Promise.all([
+  const [troquel, third] = await Promise.all([
     prisma.troqueles.findFirst({
       where: {
         id: payload.troquel_id,
@@ -143,13 +156,6 @@ const validateProductPayload = async (payload, currentProductId = null) => {
         is_active: true,
       },
     }),
-    prisma.product.findFirst({
-      where: {
-        troquel_id: payload.troquel_id,
-        third_id: payload.third_id,
-        ...(currentProductId ? { NOT: { id: currentProductId } } : {}),
-      },
-    }),
   ]);
 
   if (!troquel) {
@@ -158,10 +164,6 @@ const validateProductPayload = async (payload, currentProductId = null) => {
 
   if (!third) {
     return "El tercero seleccionado no existe o está inactivo";
-  }
-
-  if (duplicate) {
-    return "Este troquel ya está asignado al tercero seleccionado";
   }
 
   return null;
