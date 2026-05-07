@@ -289,7 +289,7 @@ model Troqueles {
   code             String?
   size             Size
   file_name        String? 
-  file             String
+  file             String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime  @default(now())
 

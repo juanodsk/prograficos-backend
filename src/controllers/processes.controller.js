@@ -2,6 +2,10 @@ import { prisma } from "../config/db.js";
 import { buildActiveWhere, normalizeIsActive } from "../utils/active.js";
 import { toSnakeCase } from "../utils/string.js";
 
+const fieldKeyPattern = /^(?=.*[A-Za-z0-9])[A-Za-z0-9_]+$/;
+const fieldKeyValidationMessage =
+  "La clave solo puede contener letras, numeros y raya al piso (_), sin espacios";
+
 const buildFieldDefinitionsData = (fieldDefinitions = []) =>
   fieldDefinitions.map((field, index) => ({
     key: field.key,
@@ -12,18 +16,24 @@ const buildFieldDefinitionsData = (fieldDefinitions = []) =>
     options: field.options ?? null,
   }));
 
-const normalizeFieldDefinitionInput = (field, index) => ({
-  id:
-    field?.id != null && field.id !== ""
-      ? Number(field.id)
-      : null,
-  label: field?.label?.trim(),
-  key: toSnakeCase(field?.key?.trim() || field?.label?.trim() || ""),
-  field_type: field?.field_type,
-  is_required: Boolean(field?.is_required),
-  sort_order: Number(field?.sort_order) || index + 1,
-  options: field?.options ?? null,
-});
+const normalizeFieldDefinitionInput = (field, index) => {
+  const rawKey = field?.key != null ? String(field.key).trim() : "";
+  const generatedKey = toSnakeCase(field?.label?.trim() || "");
+  const key = rawKey || generatedKey;
+
+  return {
+    id:
+      field?.id != null && field.id !== ""
+        ? Number(field.id)
+        : null,
+    label: field?.label?.trim(),
+    key: key.toLowerCase(),
+    field_type: field?.field_type,
+    is_required: Boolean(field?.is_required),
+    sort_order: Number(field?.sort_order) || index + 1,
+    options: field?.options ?? null,
+  };
+};
 
 const validateFieldDefinitions = (fieldDefinitions = []) => {
   const seenKeys = new Set();
@@ -39,6 +49,10 @@ const validateFieldDefinitions = (fieldDefinitions = []) => {
 
     if (!field.key) {
       return "La clave automática de uno de los campos no es válida";
+    }
+
+    if (!fieldKeyPattern.test(field.key)) {
+      return fieldKeyValidationMessage;
     }
 
     const normalizedKey = field.key.toLowerCase();
@@ -116,7 +130,9 @@ const normalizeProcessOrder = (value) => {
 const validateProcessFieldKey = async (req, res) => {
   try {
     const processId = Number(req.query?.processId);
-    const key = toSnakeCase(req.query?.key?.trim() || "");
+    const key = String(req.query?.key || "")
+      .trim()
+      .toLowerCase();
     const excludeFieldId =
       req.query?.excludeFieldId != null && req.query.excludeFieldId !== ""
         ? Number(req.query.excludeFieldId)
@@ -133,6 +149,13 @@ const validateProcessFieldKey = async (req, res) => {
       return res.status(400).json({
         status: "error",
         message: "La clave del campo es obligatoria",
+      });
+    }
+
+    if (!fieldKeyPattern.test(key)) {
+      return res.status(400).json({
+        status: "error",
+        message: fieldKeyValidationMessage,
       });
     }
 
@@ -361,7 +384,10 @@ const updateProcess = async (req, res) => {
       existingProcess.field_definitions.map((field) => [field.id, field]),
     );
     const existingDefinitionsByKey = new Map(
-      existingProcess.field_definitions.map((field) => [field.key, field]),
+      existingProcess.field_definitions.map((field) => [
+        field.key.toLowerCase(),
+        field,
+      ]),
     );
 
     const resolvedFieldDefinitions = normalizedFieldDefinitions.map((field) => {

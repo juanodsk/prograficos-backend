@@ -19,8 +19,19 @@ const upload = multer({
 const parseTroquelId = (id) => parseInt(id, 10);
 
 const knownSizes = ["SMALL", "MEDIUM", "LARGE"];
+const troquelCodePattern = /^(?=.*[A-Za-z0-9])[A-Za-z0-9_]+$/;
 const duplicateCodeMessage =
   "El código del troquel ya está siendo utilizado para ese tamaño";
+
+const validateTroquelCode = (code) => {
+  if (!code) return "El código del troquel es obligatorio";
+
+  if (!troquelCodePattern.test(code)) {
+    return "El código del troquel solo puede contener letras, números y raya al piso";
+  }
+
+  return null;
+};
 
 const findTroquelBySizeAndCode = ({ code, size, excludeId = null }) =>
   prisma.troqueles.findFirst({
@@ -117,11 +128,12 @@ const createTroqueles = async (req, res) => {
     const { code, elaboration_date, size, is_active } = req.body;
     const file = req.file;
     const normalizedCode = code?.trim();
+    const codeError = validateTroquelCode(normalizedCode);
 
-    if (!normalizedCode) {
+    if (codeError) {
       return res.status(400).json({
         status: "error",
-        message: "El código del troquel es obligatorio",
+        message: codeError,
       });
     }
 
@@ -129,13 +141,6 @@ const createTroqueles = async (req, res) => {
       return res.status(400).json({
         status: "error",
         message: "El tamaño del troquel es obligatorio",
-      });
-    }
-
-    if (!file) {
-      return res.status(400).json({
-        status: "error",
-        message: "Debes adjuntar un archivo para crear el troquel",
       });
     }
 
@@ -159,8 +164,8 @@ const createTroqueles = async (req, res) => {
           : new Date(),
         size,
         is_active: normalizeIsActive(is_active, true),
-        file: file.buffer.toString("base64"),
-        file_name: file.originalname || null,
+        file: file ? file.buffer.toString("base64") : null,
+        file_name: file?.originalname || null,
       },
     });
 
@@ -269,6 +274,7 @@ const updateTroqueles = async (req, res) => {
     const troquelId = parseTroquelId(req.params.id);
     const { code, elaboration_date, size, is_active } = req.body;
     const normalizedCode = code?.trim();
+    const codeError = validateTroquelCode(normalizedCode);
 
     if (Number.isNaN(troquelId)) {
       return res.status(400).json({
@@ -288,10 +294,10 @@ const updateTroqueles = async (req, res) => {
       });
     }
 
-    if (!normalizedCode) {
+    if (codeError) {
       return res.status(400).json({
         status: "error",
-        message: "El código del troquel es obligatorio",
+        message: codeError,
       });
     }
 
