@@ -122,6 +122,17 @@ const troquelSortMap = {
   is_active: (direction) => [{ is_active: direction }, { id: "asc" }],
 };
 
+const troquelListSelect = {
+  id: true,
+  elaboration_date: true,
+  code: true,
+  size: true,
+  file_name: true,
+  createdAt: true,
+  updatedAt: true,
+  is_active: true,
+};
+
 // ───────────── CREAR TROQUEL ─────────────
 const createTroqueles = async (req, res) => {
   try {
@@ -211,6 +222,7 @@ const getTroqueles = async (req, res) => {
 
     const troqueles = await prisma.troqueles.findMany({
       where,
+      select: troquelListSelect,
       orderBy: troquelSortMap[sortBy](sortDirection),
       skip: (meta.page - 1) * meta.pageSize,
       take: meta.pageSize,
