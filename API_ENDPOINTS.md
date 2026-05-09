@@ -529,6 +529,7 @@ Tipo de request: `multipart/form-data`
 Campos:
 
 ```txt
+code               string (requerido)
 elaboration_date   string (opcional, fecha)
 size               string (requerido)
 is_active          boolean|string|number (opcional)
@@ -544,6 +545,7 @@ Tipo de request: `multipart/form-data`
 Campos:
 
 ```txt
+code               string (requerido)
 elaboration_date   string (opcional, fecha)
 size               string (opcional)
 is_active          boolean|string|number (opcional)
