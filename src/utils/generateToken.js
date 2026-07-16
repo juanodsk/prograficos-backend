@@ -1,18 +1,32 @@
 import jwt from "jsonwebtoken";
 
-const TOKEN_DURATION_SECONDS = 20 * 60;
-const TOKEN_DURATION_MS = TOKEN_DURATION_SECONDS * 1000;
+const resolveTokenCookieOptions = () => {
+  const secure =
+    process.env.COOKIE_SECURE === "true" ||
+    process.env.NODE_ENV === "production";
+
+  const crossSiteCookies = process.env.COOKIE_CROSS_SITE !== "false";
+  const allowCrossSite = crossSiteCookies && secure;
+
+  return {
+    httpOnly: true,
+    secure,
+    sameSite: allowCrossSite ? "none" : "lax",
+    // Helps modern browsers accept third-party cookies in partitioned storage.
+    partitioned: allowCrossSite,
+  };
+};
 
 export const generateToken = (userId, res) => {
   const payload = { id: userId };
   const token = jwt.sign(payload, process.env.JWT_SECRET, {
-    expiresIn: TOKEN_DURATION_SECONDS,
+    expiresIn: process.env.JWT_EXPIRES_IN || "1d",
   });
   res.cookie("token", token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-    maxAge: TOKEN_DURATION_MS,
+    ...resolveTokenCookieOptions(),
+    maxAge: 24 * 60 * 60 * 1000,
   });
   return token;
 };
+
+export { resolveTokenCookieOptions };

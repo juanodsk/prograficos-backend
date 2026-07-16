@@ -1,0 +1,2 @@
+ALTER TABLE "troqueles"
+ADD COLUMN "cavities" INTEGER NOT NULL DEFAULT 1;

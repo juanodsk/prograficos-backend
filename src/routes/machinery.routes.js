@@ -4,6 +4,7 @@ import { verifyToken } from "../middlewares/auth.middleware.js";
 import { authorizeRoles } from "../middlewares/role.middleware.js";
 import {
   createMachinery,
+  validateMachineryReference,
   getMachinery,
   getMachineryById,
   updateMachinery,
@@ -23,6 +24,12 @@ router.get(
   verifyToken,
   authorizeRoles("ADMIN", "SUPERVISOR", "EMPLOYEE", "USER"),
   getMachinery,
+);
+router.get(
+  "/validate-reference",
+  verifyToken,
+  authorizeRoles("ADMIN", "SUPERVISOR"),
+  validateMachineryReference,
 );
 router.get(
   "/:id",

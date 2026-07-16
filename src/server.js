@@ -13,7 +13,6 @@ import formatRoutes from "./routes/formats.routes.js";
 import thirdsRoutes from "./routes/thirds.routes.js";
 import troquelesRoutes from "./routes/troqueles.routes.js";
 import productsRoutes from "./routes/products.routes.js";
-import productCustomerRoutes from "./routes/product_customer.routes.js";
 import paperTypeRoutes from "./routes/paper_type.routes.js";
 import processesRoutes from "./routes/processes.routes.js";
 import machineryRoutes from "./routes/machinery.routes.js";
@@ -23,8 +22,7 @@ import orderProcessRoutes from "./routes/order_process.routes.js";
 config();
 
 const parseAllowedOrigins = () => {
-  const envOrigins = process.env.CORS_ALLOWED_ORIGINS
-    ?.split(",")
+  const envOrigins = process.env.CORS_ALLOWED_ORIGINS?.split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
 
@@ -82,7 +80,7 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(morgan("dev"));
 app.use(cookieParser());
-app.use(express.json({ limit: "50mb" })); // suficiente para Base64 grande, si realmente quieres seguir usando JSON
+app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 app.use((req, _res, next) => {
@@ -107,7 +105,6 @@ app.use("/formats", formatRoutes);
 app.use("/thirds", thirdsRoutes);
 app.use("/troqueles", troquelesRoutes);
 app.use("/products", productsRoutes);
-app.use("/product_customers", productCustomerRoutes);
 app.use("/paper_types", paperTypeRoutes);
 app.use("/processes", processesRoutes);
 app.use("/machinery", machineryRoutes);

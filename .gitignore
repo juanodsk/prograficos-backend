@@ -4,3 +4,5 @@ node_modules
 .env.example
 
 /src/generated/prisma
+API_ENDPOINTS.md
+API_ENDPOINTS.md

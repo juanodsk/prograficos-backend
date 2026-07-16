@@ -1,0 +1,1 @@
+ALTER TABLE "troqueles" ALTER COLUMN "file" DROP NOT NULL;

@@ -25,6 +25,18 @@ enum Thirds_type {
   OTROS
 }
 
+enum Person_Type {
+  NATURAL
+  JURIDICA
+}
+
+enum Document_Type {
+  NIT
+  CC
+  CE
+  PASAPORTE
+}
+
 enum Size {
   SMALL
   MEDIUM
@@ -63,6 +75,22 @@ enum Field_Type {
   DATE
   TIME
   SELECT
+}
+
+enum Machinery_Type {
+  PREPRENSA
+  GUILLOTINA
+  IMPRESORA_OFFSET
+  IMPRESORA_DIGITAL
+  PLASTIFICADORA
+  LAMINADORA
+  BARNIZADORA
+  ESTAMPADORA
+  TROQUELADORA
+  PEGADORA
+  DOBLADORA
+  EMPAQUE
+  OTRA
 }
 
 //////////////////////////////////////////////////////
@@ -131,7 +159,7 @@ model Machinery {
   id        Int     @id @default(autoincrement())
   name      String
   reference String  @unique
-  type      String
+  type      Machinery_Type
 
   is_active Boolean @default(true)
 
@@ -147,6 +175,7 @@ model Machinery {
 model Format {
   id        Int     @id @default(autoincrement())
   name      String  @unique
+  sheet_divisions Int @default(1)
 
   is_active Boolean @default(true)
 
@@ -188,6 +217,7 @@ model Paper_Type {
   is_active Boolean @default(true)
 
   header_production_orders Header_Production_Order[]
+  suppliers                PaperTypeSupplier[]
 
   @@map("paper_types")
 }
@@ -202,13 +232,31 @@ model Thirds {
   email        String?      @unique
   address      String?
   type_person  Thirds_type? @default(CLIENTE)
+  person_type  Person_Type?
+  document_type Document_Type?
+  document_number String?
   company_name String?
 
   is_active Boolean @default(true)
 
-  product_customers Product_Customer[]
+  products Product[]
+  paper_type_suppliers PaperTypeSupplier[]
 
+  @@unique([document_type, document_number])
   @@map("thirds")
+}
+
+model PaperTypeSupplier {
+  id             Int     @id @default(autoincrement())
+  third_id       Int
+  paper_type_id  Int
+  purchase_price Decimal @db.Decimal(12, 2)
+
+  third      Thirds     @relation(fields: [third_id], references: [id])
+  paper_type Paper_Type @relation(fields: [paper_type_id], references: [id])
+
+  @@unique([paper_type_id, third_id])
+  @@map("paper_type_suppliers")
 }
 
 //////////////////////////////////////////////////////
@@ -216,36 +264,19 @@ model Thirds {
 //////////////////////////////////////////////////////
 
 model Product {
-  id   Int    @id @default(autoincrement())
-  name String @unique
-
-  is_active Boolean @default(true)
-
-  product_customers Product_Customer[]
-
-  @@map("products")
-}
-
-//////////////////////////////////////////////////////
-// PRODUCT CUSTOMER
-//////////////////////////////////////////////////////
-
-model Product_Customer {
-  id   Int     @id @default(autoincrement())
-  code String? @unique
-  name String?
-
-  product_id Int
+  id         Int @id @default(autoincrement())
+  name       String?
+  troquel_id Int
   third_id   Int
 
   is_active Boolean @default(true)
 
-  product Product @relation(fields: [product_id], references: [id])
-  third   Thirds  @relation(fields: [third_id], references: [id])
+  troquel Troqueles @relation(fields: [troquel_id], references: [id])
+  third   Thirds    @relation(fields: [third_id], references: [id])
 
   header_production_orders Header_Production_Order[]
 
-  @@map("product_customer")
+  @@map("products")
 }
 
 //////////////////////////////////////////////////////
@@ -255,17 +286,19 @@ model Product_Customer {
 model Troqueles {
   id               Int      @id @default(autoincrement())
   elaboration_date DateTime @default(now())
-  code             String?  @unique
+  code             String?
   size             Size
   file_name        String? 
-  file             String
+  file             String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime  @default(now())
 
   is_active Boolean @default(true)
 
   header_production_orders Header_Production_Order[]
+  products                 Product[]
 
+  @@unique([size, code])
   @@map("troqueles")
 }
 
@@ -276,11 +309,12 @@ model Troqueles {
 model Header_Production_Order {
   id                      Int          @id @default(autoincrement())
   date                    DateTime     @default(now())
-  date_delivery_estimated DateTime
+  date_delivery_estimated DateTime?
   order_status            Order_Status @default(PENDIENTE)
   is_active               Boolean      @default(true)
 
   amount_sheets  Int
+  cavities       Int @default(1)
   total_estimated Int
   total_delivered Int?
   total_damaged   Int?
@@ -288,14 +322,14 @@ model Header_Production_Order {
   measure_id          Int
   paper_type_id       Int
   troquel_id          Int
-  product_customer_id Int
+  product_id          Int
   user_id             Int
 
-  measure          Measure          @relation(fields: [measure_id], references: [id])
-  paper_type       Paper_Type       @relation(fields: [paper_type_id], references: [id])
-  troquel          Troqueles        @relation(fields: [troquel_id], references: [id])
-  product_customer Product_Customer @relation(fields: [product_customer_id], references: [id])
-  user             User             @relation(fields: [user_id], references: [id])
+  measure    Measure    @relation(fields: [measure_id], references: [id])
+  paper_type Paper_Type @relation(fields: [paper_type_id], references: [id])
+  troquel    Troqueles  @relation(fields: [troquel_id], references: [id])
+  product    Product    @relation(fields: [product_id], references: [id])
+  user       User       @relation(fields: [user_id], references: [id])
 
   detail_production_orders Detail_Production_Order[]
 

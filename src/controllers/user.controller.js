@@ -1,9 +1,68 @@
 import { prisma } from "../config/db.js";
 import bcrypt from "bcryptjs";
+import {
+  buildInsensitiveContains,
+  buildPaginationMeta,
+  parsePagination,
+  parseSort,
+} from "../utils/pagination.js";
+
+const knownRoles = ["ADMIN", "SUPERVISOR", "EMPLOYEE", "USER"];
+
+const buildUserSearchWhere = (rawSearch) => {
+  const search = rawSearch?.trim();
+
+  if (!search) {
+    return {};
+  }
+
+  const numericSearch = Number.parseInt(search, 10);
+  const matchedRoles = knownRoles.filter((role) =>
+    role.toLowerCase().includes(search.toLowerCase()),
+  );
+
+  const or = [
+    { name: buildInsensitiveContains(search) },
+    { surename: buildInsensitiveContains(search) },
+    { email: buildInsensitiveContains(search) },
+  ];
+
+  if (!Number.isNaN(numericSearch)) {
+    or.push({ id: numericSearch });
+  }
+
+  if (matchedRoles.length > 0) {
+    or.push({ role: { in: matchedRoles } });
+  }
+
+  return { OR: or };
+};
+
+const userSortMap = {
+  name: (direction) => [{ name: direction }, { surename: direction }],
+  email: (direction) => [{ email: direction }],
+  role: (direction) => [{ role: direction }, { name: "asc" }],
+  is_active: (direction) => [
+    { is_active: direction },
+    { name: "asc" },
+    { surename: "asc" },
+  ],
+};
 
 const getUsers = async (req, res) => {
   try {
+    const { page: requestedPage, pageSize } = parsePagination(req.query);
+    const { sortBy, sortDirection } = parseSort(req.query, {
+      allowedSortBy: Object.keys(userSortMap),
+      fallbackSortBy: "is_active",
+      fallbackSortDirection: "desc",
+    });
+    const where = buildUserSearchWhere(req.query?.search);
+    const total = await prisma.user.count({ where });
+    const meta = buildPaginationMeta(requestedPage, pageSize, total);
+
     const users = await prisma.user.findMany({
+      where,
       select: {
         id: true,
         name: true,
@@ -14,10 +73,16 @@ const getUsers = async (req, res) => {
         is_active: true,
         createdAt: true,
       },
-      orderBy: [{ is_active: "desc" }, { name: "asc" }, { surename: "asc" }],
+      orderBy: userSortMap[sortBy](sortDirection),
+      skip: (meta.page - 1) * meta.pageSize,
+      take: meta.pageSize,
     });
 
-    res.json(users);
+    res.json({
+      status: "success",
+      data: users,
+      meta,
+    });
   } catch (error) {
     res.status(500).json({ message: "Error al obtener usuarios" });
   }

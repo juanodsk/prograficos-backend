@@ -8,9 +8,12 @@ const measureInclude = {
 const createMeasure = async (req, res) => {
   try {
     const { width, height, format_id, is_active } = req.body;
+    const normalizedWidth = Number(width);
+    const normalizedHeight = Number(height);
+    const normalizedFormatId = Number(format_id);
     const format = await prisma.format.findFirst({
       where: {
-        id: Number(format_id),
+        id: normalizedFormatId,
         is_active: true,
       },
     });
@@ -22,11 +25,28 @@ const createMeasure = async (req, res) => {
       });
     }
 
+    const duplicateMeasure = await prisma.measure.findFirst({
+      where: {
+        width: normalizedWidth,
+        height: normalizedHeight,
+        format_id: normalizedFormatId,
+      },
+      include: measureInclude,
+    });
+
+    if (duplicateMeasure) {
+      return res.status(400).json({
+        status: "error",
+        message: "Ya existe una medida registrada con ese formato y dimensiones",
+        data: duplicateMeasure,
+      });
+    }
+
     const measure = await prisma.measure.create({
       data: {
-        width,
-        height,
-        format_id,
+        width: normalizedWidth,
+        height: normalizedHeight,
+        format_id: normalizedFormatId,
         is_active: normalizeIsActive(is_active, true),
       },
       include: measureInclude,
@@ -92,8 +112,12 @@ const updateMeasure = async (req, res) => {
   try {
     const { id } = req.params;
     const { width, height, format_id, is_active } = req.body;
+    const measureId = parseInt(id, 10);
+    const normalizedWidth = Number(width);
+    const normalizedHeight = Number(height);
+    const normalizedFormatId = Number(format_id);
     const measureExists = await prisma.measure.findUnique({
-      where: { id: parseInt(id) },
+      where: { id: measureId },
     });
     if (!measureExists) {
       return res
@@ -103,7 +127,7 @@ const updateMeasure = async (req, res) => {
 
     const format = await prisma.format.findFirst({
       where: {
-        id: Number(format_id),
+        id: normalizedFormatId,
         is_active: true,
       },
     });
@@ -115,14 +139,32 @@ const updateMeasure = async (req, res) => {
       });
     }
 
+    const duplicateMeasure = await prisma.measure.findFirst({
+      where: {
+        id: { not: measureId },
+        width: normalizedWidth,
+        height: normalizedHeight,
+        format_id: normalizedFormatId,
+      },
+      include: measureInclude,
+    });
+
+    if (duplicateMeasure) {
+      return res.status(400).json({
+        status: "error",
+        message: "Ya existe una medida registrada con ese formato y dimensiones",
+        data: duplicateMeasure,
+      });
+    }
+
     const measure = await prisma.measure.update({
-      where: { id: parseInt(id) },
+      where: { id: measureId },
       data: {
-        width,
-        height,
+        width: normalizedWidth,
+        height: normalizedHeight,
         is_active: normalizeIsActive(is_active, measureExists.is_active),
         format: {
-          connect: { id: format_id },
+          connect: { id: normalizedFormatId },
         },
       },
       include: measureInclude,
