@@ -1,6 +1,7 @@
 import { prisma } from "../config/db.js";
 import { emitProductionChange } from "../utils/realtime.js";
 import { parseTroquelSearchTerm } from "../utils/troquel.js";
+import { syncDynamicFieldValues } from "../utils/syncDynamicFieldValues.js";
 
 const finishedOrderStatuses = ["TERMINADO", "ENTREGADO"];
 const activeOrderStatuses = ["PENDIENTE", "EN_PROCESO"];
@@ -664,6 +665,7 @@ const createOrder = async (req, res) => {
       troquel_id,
       product_id,
       processes,
+      field_values,
     } = req.body;
 
     const validationResult = await validateOrderPayload({
@@ -717,6 +719,15 @@ const createOrder = async (req, res) => {
       },
       include: orderInclude,
     });
+
+    for (const detail of order.detail_production_orders) {
+      await syncDynamicFieldValues(
+        prisma,
+        detail.id,
+        detail.process_id,
+        field_values,
+      );
+    }
 
     res.status(201).json({
       status: "success",
@@ -1054,6 +1065,7 @@ const updateOrder = async (req, res) => {
       product_id,
       processes,
       order_status,
+      field_values,
     } = req.body;
 
     const validationResult = await validateOrderPayload({
@@ -1082,7 +1094,7 @@ const updateOrder = async (req, res) => {
     const updatedOrder = await prisma.$transaction(async (tx) => {
       await deleteOrderDetailDependencies(tx, orderId);
 
-      return tx.header_Production_Order.update({
+      const order = await tx.header_Production_Order.update({
         where: { id: orderId },
         data: {
           date_delivery_estimated: date_delivery_estimated
@@ -1111,6 +1123,17 @@ const updateOrder = async (req, res) => {
         },
         include: orderInclude,
       });
+
+      for (const detail of order.detail_production_orders) {
+        await syncDynamicFieldValues(
+          tx,
+          detail.id,
+          detail.process_id,
+          field_values,
+        );
+      }
+
+      return order;
     });
 
     res.status(200).json({
