@@ -8,7 +8,13 @@
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "start:prod": "npx prisma migrate deploy && npx prisma db seed && node src/server.js",
-    "seed:orders:500": "node prisma/seed.js --bulk-orders=500"
+    "seed:orders:500": "node prisma/seed.js --bulk-orders=500",
+    "db:up": "brew services start postgresql@14",
+    "db:down": "brew services stop postgresql@14",
+    "db:status": "brew services list | grep postgresql@14",
+    "db:migrate": "npx prisma migrate deploy",
+    "db:seed": "npx prisma db seed",
+    "db:reset": "npx prisma migrate reset --force"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
