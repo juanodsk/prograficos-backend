@@ -2,6 +2,18 @@ import { prisma } from "../config/db.js";
 import { buildActiveWhere, normalizeIsActive } from "../utils/active.js";
 import { toSnakeCase } from "../utils/string.js";
 
+const processInclude = {
+  field_definitions: {
+    where: { deleted_at: null },
+    orderBy: { sort_order: "asc" },
+  },
+  machineries: {
+    include: {
+      machinery: true,
+    },
+  },
+};
+
 const fieldKeyPattern = /^(?=.*[A-Za-z0-9])[A-Za-z0-9_]+$/;
 const fieldKeyValidationMessage =
   "La clave solo puede contener letras, numeros y raya al piso (_), sin espacios";
@@ -79,6 +91,7 @@ const findFieldDefinitionByKey = async (
         equals: key,
         mode: "insensitive",
       },
+      deleted_at: null,
       ...(excludeFieldId != null ? { id: { not: excludeFieldId } } : {}),
     },
     select: {
@@ -91,6 +104,18 @@ const findFieldDefinitionByKey = async (
           name: true,
         },
       },
+    },
+  });
+
+const findDeletedFieldDefinitionByKey = async (processId, key) =>
+  prisma.process_Field_Definition.findFirst({
+    where: {
+      process_id: processId,
+      key: {
+        equals: key,
+        mode: "insensitive",
+      },
+      deleted_at: { not: null },
     },
   });
 
@@ -194,7 +219,7 @@ const validateProcessFieldKey = async (req, res) => {
 
 const createProcess = async (req, res) => {
   try {
-    const { name, order, category, is_active, field_definitions = [] } = req.body;
+    const { name, order, category, is_active, field_definitions = [], machinery_ids = [] } = req.body;
     const normalizedOrder = normalizeProcessOrder(order);
     const normalizedFieldDefinitions = field_definitions.map(
       normalizeFieldDefinitionInput,
@@ -239,12 +264,15 @@ const createProcess = async (req, res) => {
               create: buildFieldDefinitionsData(normalizedFieldDefinitions),
             }
           : undefined,
+        machineries: machinery_ids.length
+          ? {
+              create: machinery_ids.map((machineryId) => ({
+                machinery_id: Number(machineryId),
+              })),
+            }
+          : undefined,
       },
-      include: {
-        field_definitions: {
-          orderBy: { sort_order: "asc" },
-        },
-      },
+      include: processInclude,
     });
 
     res.status(201).json({
@@ -265,11 +293,7 @@ const getProcesses = async (req, res) => {
   try {
     const processes = await prisma.process.findMany({
       where: buildActiveWhere(req.query),
-      include: {
-        field_definitions: {
-          orderBy: { sort_order: "asc" },
-        },
-      },
+      include: processInclude,
       orderBy: [{ order: "asc" }, { name: "asc" }],
     });
 
@@ -294,11 +318,7 @@ const getProcessById = async (req, res) => {
       where: {
         id: parseInt(id, 10),
       },
-      include: {
-        field_definitions: {
-          orderBy: { sort_order: "asc" },
-        },
-      },
+      include: processInclude,
     });
 
     if (!process) {
@@ -325,7 +345,7 @@ const getProcessById = async (req, res) => {
 const updateProcess = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, order, category, is_active, field_definitions = [] } = req.body;
+    const { name, order, category, is_active, field_definitions = [], machinery_ids } = req.body;
     const processId = parseInt(id, 10);
     const normalizedOrder = normalizeProcessOrder(order);
     const normalizedFieldDefinitions = field_definitions.map(
@@ -361,6 +381,7 @@ const updateProcess = async (req, res) => {
         order: true,
         is_active: true,
         field_definitions: {
+          where: { deleted_at: null },
           include: {
             _count: {
               select: {
@@ -369,6 +390,12 @@ const updateProcess = async (req, res) => {
             },
           },
           orderBy: { sort_order: "asc" },
+        },
+        machineries: {
+          select: {
+            id: true,
+            machinery_id: true,
+          },
         },
       },
     });
@@ -428,17 +455,23 @@ const updateProcess = async (req, res) => {
     const removedDefinitions = existingProcess.field_definitions.filter(
       (field) => !incomingDefinitionIds.includes(field.id),
     );
-    const blockedDefinitions = removedDefinitions.filter(
-      (field) => field._count.field_values > 0,
-    );
 
-    if (blockedDefinitions.length > 0) {
-      return res.status(400).json({
-        status: "error",
-        message: `No puedes eliminar campos que ya tienen registros: ${blockedDefinitions
-          .map((field) => field.label)
-          .join(", ")}`,
+    if (removedDefinitions.length > 0) {
+      const activeOrderCount = await prisma.detail_Production_Order.count({
+        where: {
+          process_id: processId,
+          process_state: { in: ["PENDIENTE", "EN_PROCESO"] },
+          header_order: { is_active: true },
+        },
       });
+
+      if (activeOrderCount > 0) {
+        return res.status(400).json({
+          status: "error",
+          message:
+            "No puedes eliminar campos mientras existan órdenes activas en este proceso",
+        });
+      }
     }
 
     const process = await prisma.$transaction(async (tx) => {
@@ -455,11 +488,15 @@ const updateProcess = async (req, res) => {
       });
 
       if (removedDefinitions.length > 0) {
-        await tx.process_Field_Definition.deleteMany({
+        await tx.process_Field_Definition.updateMany({
           where: {
             id: {
               in: removedDefinitions.map((field) => field.id),
             },
+            deleted_at: null,
+          },
+          data: {
+            deleted_at: new Date(),
           },
         });
       }
@@ -482,6 +519,19 @@ const updateProcess = async (req, res) => {
           continue;
         }
 
+        const deletedExisting = await findDeletedFieldDefinitionByKey(
+          processId,
+          field.key,
+        );
+
+        if (deletedExisting) {
+          await tx.process_Field_Definition.update({
+            where: { id: deletedExisting.id },
+            data: { ...fieldData, deleted_at: null },
+          });
+          continue;
+        }
+
         await tx.process_Field_Definition.create({
           data: {
             ...fieldData,
@@ -490,15 +540,40 @@ const updateProcess = async (req, res) => {
         });
       }
 
+      if (machinery_ids !== undefined) {
+        const normalizedMachineryIds = machinery_ids.map((id) => Number(id));
+        const existingMachineryIds = existingProcess.machineries
+          .filter((pm) => pm.machinery_id != null)
+          .map((pm) => pm.machinery_id);
+
+        const toRemove = existingProcess.machineries.filter(
+          (pm) => pm.machinery_id != null && !normalizedMachineryIds.includes(pm.machinery_id),
+        );
+        const toAdd = normalizedMachineryIds.filter(
+          (id) => !existingMachineryIds.includes(id),
+        );
+
+        if (toRemove.length > 0) {
+          await tx.processMachinery.deleteMany({
+            where: {
+              id: { in: toRemove.map((pm) => pm.id) },
+            },
+          });
+        }
+
+        for (const machineryId of toAdd) {
+          await tx.processMachinery.create({
+            data: {
+              process_id: processId,
+              machinery_id: machineryId,
+            },
+          });
+        }
+      }
+
       return tx.process.findUnique({
-        where: {
-          id: processId,
-        },
-        include: {
-          field_definitions: {
-            orderBy: { sort_order: "asc" },
-          },
-        },
+        where: { id: processId },
+        include: processInclude,
       });
     });
 
@@ -588,11 +663,7 @@ const reorderProcesses = async (req, res) => {
 
     const processes = await prisma.process.findMany({
       where: buildActiveWhere(req.query),
-      include: {
-        field_definitions: {
-          orderBy: { sort_order: "asc" },
-        },
-      },
+      include: processInclude,
       orderBy: [{ order: "asc" }, { name: "asc" }],
     });
 

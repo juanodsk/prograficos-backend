@@ -130,6 +130,7 @@ model Process {
 
   detail_production_orders Detail_Production_Order[]
   field_definitions        Process_Field_Definition[]
+  machineries              ProcessMachinery[]
 
   @@map("processes")
 }
@@ -143,12 +144,28 @@ model Process_Field_Definition {
   sort_order  Int
   options     Json?
   process_id  Int
+  deleted_at  DateTime?
 
   process      Process                     @relation(fields: [process_id], references: [id])
   field_values Detail_Process_Field_Value[]
 
   @@unique([process_id, key])
   @@map("process_field_definitions")
+}
+
+//////////////////////////////////////////////////////
+// PROCESS MACHINERY (junction)
+//////////////////////////////////////////////////////
+
+model ProcessMachinery {
+  id           Int        @id @default(autoincrement())
+  process_id   Int
+  machinery_id Int?
+
+  process   Process    @relation(fields: [process_id], references: [id], onDelete: Cascade)
+  machinery Machinery? @relation(fields: [machinery_id], references: [id], onDelete: SetNull)
+
+  @@map("process_machinery")
 }
 
 //////////////////////////////////////////////////////
@@ -164,6 +181,7 @@ model Machinery {
   is_active Boolean @default(true)
 
   detail_production_orders Detail_Production_Order[] @relation("MachineryDetails")
+  process_machineries ProcessMachinery[]
 
   @@map("machinery")
 }
@@ -313,11 +331,12 @@ model Header_Production_Order {
   order_status            Order_Status @default(PENDIENTE)
   is_active               Boolean      @default(true)
 
-  amount_sheets  Int
-  cavities       Int @default(1)
-  total_estimated Int
-  total_delivered Int?
-  total_damaged   Int?
+  amount_sheets          Int
+  amount_sheets_additional Int @default(0)
+  cavities               Int @default(1)
+  total_estimated        Int
+  total_delivered        Int?
+  total_damaged          Int?
 
   measure_id          Int
   paper_type_id       Int

@@ -1,12 +1,12 @@
 import { prisma } from "../config/db.js";
 import { emitProductionChange } from "../utils/realtime.js";
 
-const orderProcessInclude = {
+const orderProcessBaseInclude = {
   process: {
     include: {
-      field_definitions: {
-        orderBy: {
-          sort_order: "asc",
+      machineries: {
+        include: {
+          machinery: true,
         },
       },
     },
@@ -15,16 +15,6 @@ const orderProcessInclude = {
   measure_cutting: {
     include: {
       format: true,
-    },
-  },
-  field_values: {
-    include: {
-      field_definition: true,
-    },
-    orderBy: {
-      field_definition: {
-        sort_order: "asc",
-      },
     },
   },
   user: {
@@ -44,6 +34,53 @@ const orderProcessInclude = {
       order_status: true,
       date: true,
       date_delivery_estimated: true,
+    },
+  },
+};
+
+const orderProcessReadInclude = {
+  ...orderProcessBaseInclude,
+  process: {
+    ...orderProcessBaseInclude.process,
+    include: {
+      ...orderProcessBaseInclude.process.include,
+      field_definitions: {
+        orderBy: { sort_order: "asc" },
+      },
+    },
+  },
+  field_values: {
+    include: {
+      field_definition: true,
+    },
+    orderBy: {
+      field_definition: {
+        sort_order: "asc",
+      },
+    },
+  },
+};
+
+const orderProcessFormInclude = {
+  ...orderProcessBaseInclude,
+  process: {
+    ...orderProcessBaseInclude.process,
+    include: {
+      ...orderProcessBaseInclude.process.include,
+      field_definitions: {
+        where: { deleted_at: null },
+        orderBy: { sort_order: "asc" },
+      },
+    },
+  },
+  field_values: {
+    include: {
+      field_definition: true,
+    },
+    orderBy: {
+      field_definition: {
+        sort_order: "asc",
+      },
     },
   },
 };
@@ -90,7 +127,7 @@ const syncDynamicFieldValues = async (
   fieldValues = [],
 ) => {
   const definitions = await tx.process_Field_Definition.findMany({
-    where: { process_id: processId },
+    where: { process_id: processId, deleted_at: null },
   });
 
   const fieldValuesMap = new Map(
@@ -205,15 +242,15 @@ const getOrderProcesses = async (req, res) => {
       });
     }
 
-    const processes = await prisma.detail_Production_Order.findMany({
-      where: { header_order_id: orderId },
-      include: orderProcessInclude,
-      orderBy: {
-        process: {
-          order: "asc",
+      const processes = await prisma.detail_Production_Order.findMany({
+        where: { header_order_id: orderId },
+        include: orderProcessReadInclude,
+        orderBy: {
+          process: {
+            order: "asc",
+          },
         },
-      },
-    });
+      });
 
     res.status(200).json({
       status: "success",
@@ -242,7 +279,7 @@ const getOrderProcessById = async (req, res) => {
 
     const detail = await prisma.detail_Production_Order.findUnique({
       where: { id: detailId },
-      include: orderProcessInclude,
+      include: orderProcessReadInclude,
     });
 
     if (!detail || !detail.header_order?.is_active) {
@@ -397,7 +434,7 @@ const startOrderProcess = async (req, res) => {
           measure_cutting_id: resolvedMeasureCuttingId,
           observations: observations ?? detail.observations,
         },
-        include: orderProcessInclude,
+        include: orderProcessFormInclude,
       });
 
       await syncDynamicFieldValues(
@@ -409,7 +446,7 @@ const startOrderProcess = async (req, res) => {
       await updateHeaderOrderStatus(tx, detail.header_order_id);
       return tx.detail_Production_Order.findUnique({
         where: { id: detailId },
-        include: orderProcessInclude,
+        include: orderProcessFormInclude,
       });
     });
 
@@ -543,12 +580,12 @@ const finishOrderProcess = async (req, res) => {
           quantity_delivered: Number(quantity_delivered),
           quantity_damaged: Number(quantity_damaged),
         },
-        include: orderProcessInclude,
+        include: orderProcessReadInclude,
       });
       await updateHeaderOrderStatus(tx, detail.header_order_id);
       return tx.detail_Production_Order.findUnique({
         where: { id: detailId },
-        include: orderProcessInclude,
+        include: orderProcessReadInclude,
       });
     });
 

@@ -65,6 +65,7 @@ const orderListSelect = {
   date_delivery_estimated: true,
   order_status: true,
   amount_sheets: true,
+  amount_sheets_additional: true,
   total_estimated: true,
   product: {
     select: {
@@ -240,6 +241,7 @@ const normalizePositiveInteger = (value) => {
 const calculateOrderQuantities = ({
   calculation_mode,
   amount_sheets,
+  amount_sheets_additional,
   total_estimated,
   cavities,
   measure,
@@ -256,6 +258,8 @@ const calculateOrderQuantities = ({
   const unitsPerSheet = sheetDivisions * normalizedCavities;
   const normalizedAmountSheets = normalizePositiveInteger(amount_sheets);
   const normalizedTotalEstimated = normalizePositiveInteger(total_estimated);
+  const normalizedAmountSheetsAdditional =
+    normalizeNonNegativeInteger(amount_sheets_additional);
 
   const effectiveMode =
     calculation_mode === "SHEETS_REQUIRED" ||
@@ -274,6 +278,7 @@ const calculateOrderQuantities = ({
 
     return {
       amount_sheets: Math.ceil(normalizedTotalEstimated / unitsPerSheet),
+      amount_sheets_additional: normalizedAmountSheetsAdditional,
       total_estimated: normalizedTotalEstimated,
       cavities: normalizedCavities,
       sheet_divisions: sheetDivisions,
@@ -290,6 +295,7 @@ const calculateOrderQuantities = ({
 
   return {
     amount_sheets: normalizedAmountSheets,
+    amount_sheets_additional: normalizedAmountSheetsAdditional,
     total_estimated: normalizedAmountSheets * unitsPerSheet,
     cavities: normalizedCavities,
     sheet_divisions: sheetDivisions,
@@ -510,10 +516,21 @@ const deleteOrderDetailDependencies = async (tx, headerOrderId) => {
   });
 };
 
+const normalizeNonNegativeInteger = (value) => {
+  const normalizedValue = Number(value);
+
+  if (!Number.isFinite(normalizedValue) || normalizedValue < 0) {
+    return 0;
+  }
+
+  return Math.floor(normalizedValue);
+};
+
 const validateOrderPayload = async ({
   // date_delivery_estimated,
   calculation_mode,
   amount_sheets,
+  amount_sheets_additional,
   cavities,
   total_estimated,
   measure_id,
@@ -597,6 +614,7 @@ const validateOrderPayload = async ({
   const calculatedQuantities = calculateOrderQuantities({
     calculation_mode,
     amount_sheets,
+    amount_sheets_additional,
     total_estimated,
     cavities,
     measure,
@@ -638,6 +656,7 @@ const createOrder = async (req, res) => {
       date_delivery_estimated,
       calculation_mode,
       amount_sheets,
+      amount_sheets_additional,
       cavities,
       total_estimated,
       measure_id,
@@ -651,6 +670,7 @@ const createOrder = async (req, res) => {
       date_delivery_estimated,
       calculation_mode,
       amount_sheets: Number(amount_sheets),
+      amount_sheets_additional: Number(amount_sheets_additional),
       cavities: Number(cavities),
       total_estimated: Number(total_estimated),
       measure_id,
@@ -675,6 +695,8 @@ const createOrder = async (req, res) => {
           ? new Date(date_delivery_estimated)
           : null,
         amount_sheets: calculatedQuantities.amount_sheets,
+        amount_sheets_additional:
+          calculatedQuantities.amount_sheets_additional,
         cavities: calculatedQuantities.cavities,
         total_estimated: calculatedQuantities.total_estimated,
         measure_id: Number(measure_id),
@@ -1023,6 +1045,7 @@ const updateOrder = async (req, res) => {
       date_delivery_estimated,
       calculation_mode,
       amount_sheets,
+      amount_sheets_additional,
       cavities,
       total_estimated,
       measure_id,
@@ -1037,6 +1060,7 @@ const updateOrder = async (req, res) => {
       date_delivery_estimated,
       calculation_mode,
       amount_sheets: Number(amount_sheets),
+      amount_sheets_additional: Number(amount_sheets_additional),
       cavities: Number(cavities),
       total_estimated: Number(total_estimated),
       measure_id,
@@ -1065,6 +1089,8 @@ const updateOrder = async (req, res) => {
             ? new Date(date_delivery_estimated)
             : null,
           amount_sheets: calculatedQuantities.amount_sheets,
+          amount_sheets_additional:
+            calculatedQuantities.amount_sheets_additional,
           cavities: calculatedQuantities.cavities,
           total_estimated: calculatedQuantities.total_estimated,
           measure_id: Number(measure_id),
