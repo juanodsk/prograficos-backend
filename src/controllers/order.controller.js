@@ -68,6 +68,8 @@ const orderListSelect = {
   amount_sheets: true,
   amount_sheets_additional: true,
   total_estimated: true,
+  total_delivered: true,
+  total_damaged: true,
   product: {
     select: {
       name: true,
