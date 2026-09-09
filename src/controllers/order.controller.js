@@ -85,6 +85,18 @@ const orderListSelect = {
       },
     },
   },
+  detail_production_orders: {
+    select: {
+      process_state: true,
+      process: {
+        select: {
+          name: true,
+          order: true,
+        },
+      },
+    },
+    orderBy: [{ process: { order: "asc" } }, { id: "asc" }],
+  },
 };
 
 const auditOrderInclude = {
