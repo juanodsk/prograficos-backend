@@ -24,6 +24,7 @@ const buildFieldDefinitionsData = (fieldDefinitions = []) =>
     label: field.label,
     field_type: field.field_type,
     is_required: Boolean(field.is_required),
+    diligenciar_en_detalle: Boolean(field.diligenciar_en_detalle),
     sort_order: field.sort_order ?? index + 1,
     options: field.options ?? null,
   }));
@@ -42,6 +43,7 @@ const normalizeFieldDefinitionInput = (field, index) => {
     key: key.toLowerCase(),
     field_type: field?.field_type,
     is_required: Boolean(field?.is_required),
+    diligenciar_en_detalle: Boolean(field?.diligenciar_en_detalle),
     sort_order: Number(field?.sort_order) || index + 1,
     options: field?.options ?? null,
   };
@@ -507,6 +509,7 @@ const updateProcess = async (req, res) => {
           label: field.label,
           field_type: field.field_type,
           is_required: Boolean(field.is_required),
+          diligenciar_en_detalle: Boolean(field.diligenciar_en_detalle),
           sort_order: field.sort_order,
           options: field.options ?? null,
         };

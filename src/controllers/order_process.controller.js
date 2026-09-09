@@ -108,7 +108,9 @@ const getOrderedOrderDetails = async (db, headerOrderId) =>
   });
 
 const getBlockingPreviousProcess = (orderedDetails, detailId) => {
-  const currentIndex = orderedDetails.findIndex((detail) => detail.id === detailId);
+  const currentIndex = orderedDetails.findIndex(
+    (detail) => detail.id === detailId,
+  );
 
   if (currentIndex <= 0) {
     return null;
@@ -198,15 +200,15 @@ const getOrderProcesses = async (req, res) => {
       });
     }
 
-      const processes = await prisma.detail_Production_Order.findMany({
-        where: { header_order_id: orderId },
-        include: orderProcessReadInclude,
-        orderBy: {
-          process: {
-            order: "asc",
-          },
+    const processes = await prisma.detail_Production_Order.findMany({
+      where: { header_order_id: orderId },
+      include: orderProcessReadInclude,
+      orderBy: {
+        process: {
+          order: "asc",
         },
-      });
+      },
+    });
 
     res.status(200).json({
       status: "success",
@@ -270,7 +272,8 @@ const startOrderProcess = async (req, res) => {
       });
     }
 
-    const { machinery_id, measure_cutting_id, observations, field_values } = req.body;
+    const { machinery_id, measure_cutting_id, observations, field_values } =
+      req.body;
 
     const detail = await prisma.detail_Production_Order.findUnique({
       where: { id: detailId },
@@ -308,7 +311,8 @@ const startOrderProcess = async (req, res) => {
     if (detail.process_state === "EN_PROCESO") {
       return res.status(400).json({
         status: "error",
-        message: "Este proceso ya fue iniciado y no permite cambiar los datos de entrada",
+        message:
+          "Este proceso ya fue iniciado y no permite cambiar los datos de entrada",
       });
     }
 
@@ -386,7 +390,9 @@ const startOrderProcess = async (req, res) => {
           process_state: "EN_PROCESO",
           user_id: req.user.id,
           machinery_id:
-            requestedMachineryId != null ? requestedMachineryId : detail.machinery_id,
+            requestedMachineryId != null
+              ? requestedMachineryId
+              : detail.machinery_id,
           measure_cutting_id: resolvedMeasureCuttingId,
           observations: observations ?? detail.observations,
         },

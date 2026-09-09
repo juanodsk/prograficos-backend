@@ -141,6 +141,7 @@ model Process_Field_Definition {
   label       String
   field_type  Field_Type
   is_required Boolean    @default(false)
+  diligenciar_en_detalle Boolean @default(false)
   sort_order  Int
   options     Json?
   process_id  Int
