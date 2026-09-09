@@ -88,6 +88,12 @@ const orderProcessFormInclude = {
 
 const parseId = (value) => parseInt(value, 10);
 
+const isOperatorSignatureField = (field) => {
+  const key = field?.key?.toLowerCase() || "";
+  const label = field?.label?.toLowerCase() || "";
+  return key.includes("firma_operario") || label.includes("firma operario");
+};
+
 const getOrderedOrderDetails = async (db, headerOrderId) =>
   db.detail_Production_Order.findMany({
     where: {
@@ -342,6 +348,13 @@ const startOrderProcess = async (req, res) => {
       });
     }
 
+    if (requestedMachineryId == null) {
+      return res.status(400).json({
+        status: "error",
+        message: "Debes seleccionar una maquinaria antes de iniciar el proceso",
+      });
+    }
+
     if (measure_cutting_id != null && measure_cutting_id !== "") {
       return res.status(400).json({
         status: "error",
@@ -364,6 +377,40 @@ const startOrderProcess = async (req, res) => {
           message: "La maquinaria seleccionada no existe o está inactiva",
         });
       }
+    }
+
+    // Los campos que se diligencian en el detalle son obligatorios; solo las
+    // observaciones son opcionales. Los BOOLEAN siempre tienen valor y la firma
+    // del operario se excluye.
+    const providedFieldValues = new Map(
+      (Array.isArray(field_values) ? field_values : [])
+        .filter((fieldValue) => fieldValue?.field_definition_id != null)
+        .map((fieldValue) => [
+          Number(fieldValue.field_definition_id),
+          fieldValue.value,
+        ]),
+    );
+
+    const missingDetailFields = (detail.process?.field_definitions || [])
+      .filter(
+        (field) =>
+          field.diligenciar_en_detalle &&
+          field.deleted_at == null &&
+          field.field_type !== "BOOLEAN" &&
+          !isOperatorSignatureField(field),
+      )
+      .filter((field) => {
+        const value = providedFieldValues.get(field.id);
+        return value == null || String(value).trim() === "";
+      });
+
+    if (missingDetailFields.length > 0) {
+      return res.status(400).json({
+        status: "error",
+        message: `Debes diligenciar los campos obligatorios: ${missingDetailFields
+          .map((field) => field.label)
+          .join(", ")}`,
+      });
     }
 
     const resolvedMeasureCuttingId = detail.header_order?.measure_id || null;
