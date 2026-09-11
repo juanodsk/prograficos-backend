@@ -10,20 +10,7 @@ const processBlueprints = [
     order: 1,
     category: "CORTE",
     machineryRefs: ["GUI-01"],
-    fields: [
-      {
-        key: "tamano_corte",
-        label: "Tamano",
-        field_type: "TEXT",
-        is_required: true,
-      },
-      {
-        key: "tamano_entregado",
-        label: "Tamanos entregados",
-        field_type: "NUMBER",
-        is_required: false,
-      },
-    ],
+    fields: [],
   },
   {
     name: "Impresión",
@@ -38,16 +25,10 @@ const processBlueprints = [
         is_required: true,
       },
       {
-        key: "color_1",
-        label: "Color 1",
+        key: "descripcion_colores",
+        label: "Descripción Colores",
         field_type: "TEXT",
         is_required: true,
-      },
-      {
-        key: "color_2",
-        label: "Color 2",
-        field_type: "TEXT",
-        is_required: false,
       },
       {
         key: "policromia",
@@ -59,12 +40,6 @@ const processBlueprints = [
         key: "retiro",
         label: "Retiro",
         field_type: "BOOLEAN",
-        is_required: false,
-      },
-      {
-        key: "unid_impresion",
-        label: "Unid. impresion",
-        field_type: "NUMBER",
         is_required: false,
       },
     ],
@@ -87,12 +62,6 @@ const processBlueprints = [
         field_type: "TEXT",
         is_required: false,
       },
-      {
-        key: "unid_plastificado",
-        label: "Unid. plastificado",
-        field_type: "NUMBER",
-        is_required: false,
-      },
     ],
   },
   {
@@ -100,20 +69,7 @@ const processBlueprints = [
     order: 4,
     category: "TROQUELADO",
     machineryRefs: ["TRQ-01"],
-    fields: [
-      {
-        key: "codigo_troquel_aplicado",
-        label: "Codigo troquel aplicado",
-        field_type: "TEXT",
-        is_required: false,
-      },
-      {
-        key: "unid_troquelado",
-        label: "Unid. troquelado",
-        field_type: "NUMBER",
-        is_required: false,
-      },
-    ],
+    fields: [],
   },
   {
     name: "Acabados Estampado",
@@ -127,12 +83,6 @@ const processBlueprints = [
         field_type: "TEXT",
         is_required: true,
       },
-      {
-        key: "unid_estampado",
-        label: "Unid. estampado",
-        field_type: "NUMBER",
-        is_required: false,
-      },
     ],
   },
   {
@@ -145,12 +95,6 @@ const processBlueprints = [
         key: "tipo_pegue",
         label: "Tipo de pegue",
         field_type: "TEXT",
-        is_required: false,
-      },
-      {
-        key: "unid_pegado",
-        label: "Unid. pegado",
-        field_type: "NUMBER",
         is_required: false,
       },
     ],
@@ -2474,6 +2418,8 @@ async function syncProcessDefinitions(process, fields) {
         is_required: Boolean(field.is_required),
         sort_order: index + 1,
         options: field.options ?? null,
+        // Si el campo estaba soft-deleteado y vuelve al blueprint, se revive.
+        deleted_at: null,
       },
       create: {
         process_id: process.id,
@@ -2486,6 +2432,18 @@ async function syncProcessDefinitions(process, fields) {
       },
     });
   }
+
+  // Soft-delete de los campos que ya no están en el blueprint (idempotencia):
+  // conserva el historial en detail_process_field_values pero deja de mostrarlos.
+  const keptKeys = fields.map((field) => field.key);
+  await prisma.process_Field_Definition.updateMany({
+    where: {
+      process_id: process.id,
+      key: { notIn: keptKeys.length ? keptKeys : ["__none__"] },
+      deleted_at: null,
+    },
+    data: { deleted_at: new Date() },
+  });
 }
 
 const getMachineryForProcess = (processCategory, machineryByType) => {
