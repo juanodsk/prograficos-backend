@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
@@ -8,6 +9,7 @@ const processBlueprints = [
     name: "Corte",
     order: 1,
     category: "CORTE",
+    machineryRefs: ["GUI-01"],
     fields: [
       {
         key: "tamano_corte",
@@ -27,6 +29,7 @@ const processBlueprints = [
     name: "Impresión",
     order: 2,
     category: "IMPRESION",
+    machineryRefs: ["HEI-74", "DIG-01"],
     fields: [
       {
         key: "numero_tintas",
@@ -70,6 +73,7 @@ const processBlueprints = [
     name: "Plastificado",
     order: 3,
     category: "ACABADO",
+    machineryRefs: ["PLA-01"],
     fields: [
       {
         key: "tipo_plastico",
@@ -95,6 +99,7 @@ const processBlueprints = [
     name: "Troquelado",
     order: 4,
     category: "TROQUELADO",
+    machineryRefs: ["TRQ-01"],
     fields: [
       {
         key: "codigo_troquel_aplicado",
@@ -114,6 +119,7 @@ const processBlueprints = [
     name: "Acabados Estampado",
     order: 5,
     category: "ACABADO",
+    machineryRefs: [],
     fields: [
       {
         key: "color_estampado",
@@ -133,6 +139,7 @@ const processBlueprints = [
     name: "Acabado de Pegado",
     order: 6,
     category: "PEGADO",
+    machineryRefs: ["PEG-01"],
     fields: [
       {
         key: "tipo_pegue",
@@ -2253,16 +2260,19 @@ const formatCatalog = [
   {
     name: "1 Pliego",
     sheet_divisions: 1,
+    is_active: true,
     measures: [{ width: 100, height: 70 }],
   },
   {
     name: "1/2 Pliego",
     sheet_divisions: 2,
+    is_active: true,
     measures: [{ width: 70, height: 50 }],
   },
   {
     name: "1/3 Pliego",
     sheet_divisions: 3,
+    is_active: true,
     measures: [
       { width: 65, height: 35 },
       { width: 70, height: 33 },
@@ -2271,6 +2281,7 @@ const formatCatalog = [
   {
     name: "1/4 Pliego",
     sheet_divisions: 4,
+    is_active: true,
     measures: [
       { width: 50, height: 35 },
       { width: 70, height: 25 },
@@ -2279,6 +2290,7 @@ const formatCatalog = [
   {
     name: "1/5 Pliego",
     sheet_divisions: 5,
+    is_active: true,
     measures: [
       { width: 43, height: 27 },
       { width: 42, height: 28 },
@@ -2288,6 +2300,7 @@ const formatCatalog = [
   {
     name: "1/6 Pliego",
     sheet_divisions: 6,
+    is_active: true,
     measures: [
       { width: 50, height: 23 },
       { width: 35, height: 33 },
@@ -2296,21 +2309,25 @@ const formatCatalog = [
   {
     name: "1/8 Pliego",
     sheet_divisions: 8,
+    is_active: true,
     measures: [{ width: 35, height: 25 }],
   },
   {
     name: "1/9 Pliego",
     sheet_divisions: 9,
+    is_active: true,
     measures: [{ width: 33, height: 23 }],
   },
   {
     name: "1/10 Pliego",
     sheet_divisions: 10,
+    is_active: true,
     measures: [{ width: 28, height: 22 }],
   },
   {
     name: "1/12 Pliego",
     sheet_divisions: 12,
+    is_active: true,
     measures: [
       { width: 33, height: 17.5 },
       { width: 25, height: 23 },
@@ -2319,51 +2336,61 @@ const formatCatalog = [
   {
     name: "1/15 Pliego",
     sheet_divisions: 15,
+    is_active: false,
     measures: [{ width: 23, height: 20 }],
   },
   {
     name: "1/16 Pliego",
     sheet_divisions: 16,
+    is_active: false,
     measures: [{ width: 25, height: 17.5 }],
   },
   {
     name: "1/18 Pliego",
     sheet_divisions: 18,
+    is_active: false,
     measures: [{ width: 23, height: 16.5 }],
   },
   {
     name: "1/20 Pliego",
     sheet_divisions: 20,
+    is_active: false,
     measures: [{ width: 20, height: 17.5 }],
   },
   {
     name: "1/22 Pliego",
     sheet_divisions: 22,
+    is_active: false,
     measures: [{ width: 22, height: 14 }],
   },
   {
     name: "1/24 Pliego",
     sheet_divisions: 24,
+    is_active: false,
     measures: [{ width: 17.5, height: 16.5 }],
   },
   {
     name: "1/25 Pliego",
     sheet_divisions: 25,
+    is_active: false,
     measures: [{ width: 20, height: 14 }],
   },
   {
     name: "1/32 Pliego",
     sheet_divisions: 32,
+    is_active: false,
     measures: [{ width: 17.5, height: 12.5 }],
   },
   {
     name: "1/36 Pliego",
     sheet_divisions: 36,
+    is_active: false,
     measures: [{ width: 16.5, height: 11.5 }],
   },
   {
     name: "1/132 Pliego",
     sheet_divisions: 132,
+    is_active: false,
     measures: [{ width: 9, height: 5.5 }],
   },
 ];
@@ -2558,7 +2585,44 @@ async function seedUsers() {
   }
 }
 
-async function seedProcesses() {
+// Administrador para producción: toma email y contraseña de variables de
+// entorno (no hay credenciales quemadas). No resetea la contraseña si el
+// usuario ya existe, para no pisar un cambio hecho en la app.
+async function seedAdmin() {
+  const email = process.env.ADMIN_EMAIL?.trim();
+  const password = process.env.ADMIN_PASSWORD;
+
+  if (!email || !password) {
+    console.warn(
+      "⚠️ seed:admin requiere ADMIN_EMAIL y ADMIN_PASSWORD. Operación omitida.",
+    );
+    return;
+  }
+
+  const name = process.env.ADMIN_NAME?.trim() || "Administrador";
+  const surename = process.env.ADMIN_SURENAME?.trim() || "Prográficos";
+  const salt = await bcrypt.genSalt(10);
+
+  await prisma.user.upsert({
+    where: { email },
+    update: {
+      role: "ADMIN",
+      is_active: true,
+    },
+    create: {
+      name,
+      surename,
+      email,
+      password: await bcrypt.hash(password, salt),
+      role: "ADMIN",
+      is_active: true,
+    },
+  });
+
+  console.log(`✅ Administrador listo (${email})`);
+}
+
+async function seedProcesses(machineryByRef = {}) {
   for (const blueprint of processBlueprints) {
     const process = await prisma.process.upsert({
       where: { name: blueprint.name },
@@ -2576,12 +2640,29 @@ async function seedProcesses() {
     });
 
     await syncProcessDefinitions(process, blueprint.fields);
+
+    const machineryIds = (blueprint.machineryRefs || [])
+      .map((ref) => machineryByRef[ref]?.id)
+      .filter(Boolean);
+
+    if (machineryIds.length > 0) {
+      await prisma.processMachinery.deleteMany({
+        where: { process_id: process.id },
+      });
+      await prisma.processMachinery.createMany({
+        data: machineryIds.map((machineryId) => ({
+          process_id: process.id,
+          machinery_id: machineryId,
+        })),
+      });
+    }
   }
 }
 
 async function seedMachinery() {
+  const machineryByRef = {};
   for (const machinerySeed of machinerySeeds) {
-    await prisma.machinery.upsert({
+    const record = await prisma.machinery.upsert({
       where: { reference: machinerySeed.reference },
       update: {
         name: machinerySeed.name,
@@ -2593,7 +2674,9 @@ async function seedMachinery() {
         is_active: true,
       },
     });
+    machineryByRef[record.reference] = record;
   }
+  return machineryByRef;
 }
 
 async function seedTroqueles() {
@@ -2625,12 +2708,12 @@ async function seedFormatsAndMeasures() {
       where: { name: formatSeed.name },
       update: {
         sheet_divisions: formatSeed.sheet_divisions,
-        is_active: true,
+        is_active: formatSeed.is_active,
       },
       create: {
         name: formatSeed.name,
         sheet_divisions: formatSeed.sheet_divisions,
-        is_active: true,
+        is_active: formatSeed.is_active,
       },
     });
 
@@ -3007,18 +3090,21 @@ async function seedBulkOrders(bulkOrdersCount) {
   }
 }
 
-async function main() {
-  console.log("🌱 Iniciando seed...");
-  const bulkOrdersCount = parseBulkOrdersCount();
+// Modo del seed: "catalogs" (maestros, seguro en producción),
+// "demo" (usuarios y órdenes de prueba, solo local) o "all" (ambos).
+function parseSeedMode() {
+  const arg = process.argv.find((value) => value.startsWith("--mode="));
+  const mode = arg?.split("=")[1] || process.env.SEED_MODE || "all";
+  return ["catalogs", "demo", "admin", "all"].includes(mode) ? mode : "all";
+}
 
-  await seedUsers();
-  console.log("✅ Usuarios listos");
-
-  await seedProcesses();
-  console.log("✅ Procesos y campos listos");
-
-  await seedMachinery();
+// Catálogos / datos maestros. Idempotente y seguro para producción.
+async function seedCatalogs() {
+  const machineryByRef = await seedMachinery();
   console.log("✅ Maquinaria lista");
+
+  await seedProcesses(machineryByRef);
+  console.log("✅ Procesos, campos y maquinaria asociada listos");
 
   await seedTroqueles();
   console.log("✅ Troqueles listos");
@@ -3037,11 +3123,36 @@ async function main() {
 
   await seedProducts();
   console.log("✅ Productos listos");
+}
+
+// Datos de prueba/relleno. NO ejecutar en producción: crea usuarios con
+// contraseñas conocidas y órdenes ficticias. Requiere catálogos ya sembrados.
+async function seedDemo(bulkOrdersCount) {
+  await seedUsers();
+  console.log("✅ Usuarios demo listos");
 
   await seedDemoOrders();
   console.log("✅ Órdenes demo listas");
 
   await seedBulkOrders(bulkOrdersCount);
+}
+
+async function main() {
+  const mode = parseSeedMode();
+  console.log(`🌱 Iniciando seed (modo: ${mode})...`);
+  const bulkOrdersCount = parseBulkOrdersCount();
+
+  if (mode === "catalogs" || mode === "all") {
+    await seedCatalogs();
+  }
+
+  if (mode === "demo" || mode === "all") {
+    await seedDemo(bulkOrdersCount);
+  }
+
+  if (mode === "admin") {
+    await seedAdmin();
+  }
 
   console.log("🎉 Seed ejecutado correctamente");
 }

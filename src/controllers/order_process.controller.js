@@ -1,12 +1,13 @@
 import { prisma } from "../config/db.js";
 import { emitProductionChange } from "../utils/realtime.js";
+import { syncDynamicFieldValues } from "../utils/syncDynamicFieldValues.js";
 
-const orderProcessInclude = {
+const orderProcessBaseInclude = {
   process: {
     include: {
-      field_definitions: {
-        orderBy: {
-          sort_order: "asc",
+      machineries: {
+        include: {
+          machinery: true,
         },
       },
     },
@@ -15,16 +16,6 @@ const orderProcessInclude = {
   measure_cutting: {
     include: {
       format: true,
-    },
-  },
-  field_values: {
-    include: {
-      field_definition: true,
-    },
-    orderBy: {
-      field_definition: {
-        sort_order: "asc",
-      },
     },
   },
   user: {
@@ -48,7 +39,60 @@ const orderProcessInclude = {
   },
 };
 
+const orderProcessReadInclude = {
+  ...orderProcessBaseInclude,
+  process: {
+    ...orderProcessBaseInclude.process,
+    include: {
+      ...orderProcessBaseInclude.process.include,
+      field_definitions: {
+        orderBy: { sort_order: "asc" },
+      },
+    },
+  },
+  field_values: {
+    include: {
+      field_definition: true,
+    },
+    orderBy: {
+      field_definition: {
+        sort_order: "asc",
+      },
+    },
+  },
+};
+
+const orderProcessFormInclude = {
+  ...orderProcessBaseInclude,
+  process: {
+    ...orderProcessBaseInclude.process,
+    include: {
+      ...orderProcessBaseInclude.process.include,
+      field_definitions: {
+        where: { deleted_at: null },
+        orderBy: { sort_order: "asc" },
+      },
+    },
+  },
+  field_values: {
+    include: {
+      field_definition: true,
+    },
+    orderBy: {
+      field_definition: {
+        sort_order: "asc",
+      },
+    },
+  },
+};
+
 const parseId = (value) => parseInt(value, 10);
+
+const isOperatorSignatureField = (field) => {
+  const key = field?.key?.toLowerCase() || "";
+  const label = field?.label?.toLowerCase() || "";
+  return key.includes("firma_operario") || label.includes("firma operario");
+};
 
 const getOrderedOrderDetails = async (db, headerOrderId) =>
   db.detail_Production_Order.findMany({
@@ -70,7 +114,9 @@ const getOrderedOrderDetails = async (db, headerOrderId) =>
   });
 
 const getBlockingPreviousProcess = (orderedDetails, detailId) => {
-  const currentIndex = orderedDetails.findIndex((detail) => detail.id === detailId);
+  const currentIndex = orderedDetails.findIndex(
+    (detail) => detail.id === detailId,
+  );
 
   if (currentIndex <= 0) {
     return null;
@@ -81,51 +127,6 @@ const getBlockingPreviousProcess = (orderedDetails, detailId) => {
       .slice(0, currentIndex)
       .find((detail) => detail.process_state !== "TERMINADO") || null
   );
-};
-
-const syncDynamicFieldValues = async (
-  tx,
-  detailId,
-  processId,
-  fieldValues = [],
-) => {
-  const definitions = await tx.process_Field_Definition.findMany({
-    where: { process_id: processId },
-  });
-
-  const fieldValuesMap = new Map(
-    Array.isArray(fieldValues)
-      ? fieldValues
-          .filter((fieldValue) => fieldValue?.field_definition_id)
-          .map((fieldValue) => [
-            Number(fieldValue.field_definition_id),
-            fieldValue.value,
-          ])
-      : [],
-  );
-
-  for (const definition of definitions) {
-    let value = fieldValuesMap.get(definition.id);
-
-    if (value == null || value === "") continue;
-
-    await tx.detail_Process_Field_Value.upsert({
-      where: {
-        detail_production_order_id_field_definition_id: {
-          detail_production_order_id: detailId,
-          field_definition_id: definition.id,
-        },
-      },
-      update: {
-        value: String(value),
-      },
-      create: {
-        detail_production_order_id: detailId,
-        field_definition_id: definition.id,
-        value: String(value),
-      },
-    });
-  }
 };
 
 const updateHeaderOrderStatus = async (tx, headerOrderId) => {
@@ -207,7 +208,7 @@ const getOrderProcesses = async (req, res) => {
 
     const processes = await prisma.detail_Production_Order.findMany({
       where: { header_order_id: orderId },
-      include: orderProcessInclude,
+      include: orderProcessReadInclude,
       orderBy: {
         process: {
           order: "asc",
@@ -242,7 +243,7 @@ const getOrderProcessById = async (req, res) => {
 
     const detail = await prisma.detail_Production_Order.findUnique({
       where: { id: detailId },
-      include: orderProcessInclude,
+      include: orderProcessReadInclude,
     });
 
     if (!detail || !detail.header_order?.is_active) {
@@ -277,7 +278,8 @@ const startOrderProcess = async (req, res) => {
       });
     }
 
-    const { machinery_id, measure_cutting_id, observations, field_values } = req.body;
+    const { machinery_id, measure_cutting_id, observations, field_values } =
+      req.body;
 
     const detail = await prisma.detail_Production_Order.findUnique({
       where: { id: detailId },
@@ -315,7 +317,8 @@ const startOrderProcess = async (req, res) => {
     if (detail.process_state === "EN_PROCESO") {
       return res.status(400).json({
         status: "error",
-        message: "Este proceso ya fue iniciado y no permite cambiar los datos de entrada",
+        message:
+          "Este proceso ya fue iniciado y no permite cambiar los datos de entrada",
       });
     }
 
@@ -345,6 +348,13 @@ const startOrderProcess = async (req, res) => {
       });
     }
 
+    if (requestedMachineryId == null) {
+      return res.status(400).json({
+        status: "error",
+        message: "Debes seleccionar una maquinaria antes de iniciar el proceso",
+      });
+    }
+
     if (measure_cutting_id != null && measure_cutting_id !== "") {
       return res.status(400).json({
         status: "error",
@@ -367,6 +377,40 @@ const startOrderProcess = async (req, res) => {
           message: "La maquinaria seleccionada no existe o está inactiva",
         });
       }
+    }
+
+    // Los campos que se diligencian en el detalle son obligatorios; solo las
+    // observaciones son opcionales. Los BOOLEAN siempre tienen valor y la firma
+    // del operario se excluye.
+    const providedFieldValues = new Map(
+      (Array.isArray(field_values) ? field_values : [])
+        .filter((fieldValue) => fieldValue?.field_definition_id != null)
+        .map((fieldValue) => [
+          Number(fieldValue.field_definition_id),
+          fieldValue.value,
+        ]),
+    );
+
+    const missingDetailFields = (detail.process?.field_definitions || [])
+      .filter(
+        (field) =>
+          field.diligenciar_en_detalle &&
+          field.deleted_at == null &&
+          field.field_type !== "BOOLEAN" &&
+          !isOperatorSignatureField(field),
+      )
+      .filter((field) => {
+        const value = providedFieldValues.get(field.id);
+        return value == null || String(value).trim() === "";
+      });
+
+    if (missingDetailFields.length > 0) {
+      return res.status(400).json({
+        status: "error",
+        message: `Debes diligenciar los campos obligatorios: ${missingDetailFields
+          .map((field) => field.label)
+          .join(", ")}`,
+      });
     }
 
     const resolvedMeasureCuttingId = detail.header_order?.measure_id || null;
@@ -393,11 +437,13 @@ const startOrderProcess = async (req, res) => {
           process_state: "EN_PROCESO",
           user_id: req.user.id,
           machinery_id:
-            requestedMachineryId != null ? requestedMachineryId : detail.machinery_id,
+            requestedMachineryId != null
+              ? requestedMachineryId
+              : detail.machinery_id,
           measure_cutting_id: resolvedMeasureCuttingId,
           observations: observations ?? detail.observations,
         },
-        include: orderProcessInclude,
+        include: orderProcessFormInclude,
       });
 
       await syncDynamicFieldValues(
@@ -409,7 +455,7 @@ const startOrderProcess = async (req, res) => {
       await updateHeaderOrderStatus(tx, detail.header_order_id);
       return tx.detail_Production_Order.findUnique({
         where: { id: detailId },
-        include: orderProcessInclude,
+        include: orderProcessFormInclude,
       });
     });
 
@@ -543,12 +589,12 @@ const finishOrderProcess = async (req, res) => {
           quantity_delivered: Number(quantity_delivered),
           quantity_damaged: Number(quantity_damaged),
         },
-        include: orderProcessInclude,
+        include: orderProcessReadInclude,
       });
       await updateHeaderOrderStatus(tx, detail.header_order_id);
       return tx.detail_Production_Order.findUnique({
         where: { id: detailId },
-        include: orderProcessInclude,
+        include: orderProcessReadInclude,
       });
     });
 

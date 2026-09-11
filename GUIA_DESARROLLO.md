@@ -546,7 +546,7 @@ El revisor debe comprobar:
 
 1. Separar el seed de desarrollo de `start:prod`; impedir credenciales demo y reactivaciones automáticas en producción.
 2. Revisar el registro público, porque un `USER` auto-registrado puede iniciar y finalizar procesos.
-3. Eliminar `product_customer.controller.js` y `product_customer.routes.js` o conservarlos únicamente como historia fuera de `src`; actualizar `API_ENDPOINTS.md`.
+3. ~~Eliminar `product_customer.controller.js` y `product_customer.routes.js`; actualizar `API_ENDPOINTS.md`.~~ **Hecho (2026-09-08):** archivos borrados y documentación sincronizada.
 4. Versionar una `.env.example` completa y dejar de ignorarla.
 5. Validar variables requeridas al arranque.
 
@@ -589,13 +589,13 @@ Un cambio está terminado cuando:
 
 ## 21. Hallazgos verificados durante este análisis
 
-- El esquema Prisma actual es válido y contiene 14 modelos y 10 enums.
+- El esquema Prisma actual es válido y contiene 15 modelos y 10 enums (se agregó `ProcessMachinery` como relación proceso-maquinaria).
 - La sintaxis de los archivos JavaScript bajo `src/` y `prisma/` es válida.
-- Hay 64 endpoints Express efectivamente montados.
-- `product_customer` no está montado y su modelo fue eliminado por migración.
+- Hay 69 endpoints Express efectivamente montados (sin contar `product_customer`, que no está montado).
+- `product_customer` fue eliminado por completo: el modelo se quitó por migración y los archivos `product_customer.controller.js` y `product_customer.routes.js` se borraron de `src/` (2026-09-08). `Product` ahora relaciona directamente `Thirds` con `Troqueles`. Las migraciones históricas que mencionan la tabla `product_customer` se conservan intactas (historia ya aplicada).
 - La documentación histórica usa todavía `product_customer_id` en órdenes, mientras el código actual usa `product_id` y valida `troquel_id`.
 - El archivo de troquel es opcional en el esquema/controlador, aunque la referencia histórica lo presenta como obligatorio.
-- Existen rutas actuales no reflejadas completamente en la referencia histórica: monitor de órdenes, validación de maquinaria, validación/reordenamiento de procesos y filtros paginados.
+- El monitor de órdenes (`GET /order/board`), la validación de maquinaria (`GET /machinery/validate-reference`) y la validación/reordenamiento de procesos (`GET /processes/validate-field-key`, `PATCH /processes/reorder`) ya están reflejados en `API_ENDPOINTS.md`.
 - El esquema pasó `prisma validate`; no se ejecutaron pruebas funcionales porque el proyecto no incluye una suite.
 
 Estos hallazgos describen el estado observado, no sustituyen una auditoría de seguridad ni pruebas end-to-end con una base aislada.

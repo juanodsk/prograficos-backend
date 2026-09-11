@@ -290,6 +290,12 @@ Query opcional:
 ?onlyActive=true
 ```
 
+### `GET /machinery/validate-reference`
+
+Requiere rol: `ADMIN`, `SUPERVISOR`
+
+Valida disponibilidad/unicidad de una referencia de maquinaria antes de guardar.
+
 ### `GET /machinery/:id`
 
 Requiere rol: `ADMIN`, `SUPERVISOR`, `EMPLOYEE`, `USER`
@@ -428,10 +434,18 @@ Body:
 
 ```json
 {
-  "name": "Caja plegadiza",
+  "name": "Caja Cliente X",
+  "troquel_id": 3,
+  "third_id": 2,
   "is_active": true
 }
 ```
+
+Notas:
+
+- Un `Product` es el puente entre un `Thirds` (cliente) y un `Troqueles`.
+- `troquel_id` y `third_id` son obligatorios y deben referenciar registros activos.
+- `name` es opcional.
 
 ### `PUT /products/:id`
 
@@ -441,7 +455,9 @@ Body:
 
 ```json
 {
-  "name": "Caja plegadiza",
+  "name": "Caja Cliente X",
+  "troquel_id": 3,
+  "third_id": 2,
   "is_active": true
 }
 ```
@@ -452,57 +468,9 @@ Requiere rol: `ADMIN`, `SUPERVISOR`
 
 Sin body. Hace borrado lógico.
 
-## Product Customers
-
-### `GET /product_customers/`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Query opcional:
-
-```txt
-?onlyActive=true
-```
-
-### `GET /product_customers/:id`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-### `POST /product_customers/`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Body:
-
-```json
-{
-  "name": "Caja Cliente X",
-  "product_id": 1,
-  "third_id": 2,
-  "is_active": true
-}
-```
-
-### `PUT /product_customers/:id`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Body:
-
-```json
-{
-  "name": "Caja Cliente X",
-  "product_id": 1,
-  "third_id": 2,
-  "is_active": true
-}
-```
-
-### `DELETE /product_customers/:id`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Sin body. Hace borrado lógico.
+> Nota: El módulo `Product_Customer` (`/product_customers/*`) fue eliminado del
+> dominio. `Product` ahora relaciona directamente `Thirds` con `Troqueles`, por
+> lo que ya no existe una entidad intermedia ni sus endpoints.
 
 ## Troqueles
 
@@ -569,6 +537,18 @@ Query opcional:
 ```txt
 ?onlyActive=true
 ```
+
+### `GET /processes/validate-field-key`
+
+Requiere rol: `ADMIN`, `SUPERVISOR`
+
+Valida que la `key` de un campo dinámico sea única dentro del proceso.
+
+### `PATCH /processes/reorder`
+
+Requiere rol: `ADMIN`, `SUPERVISOR`
+
+Reordena los procesos (actualiza el campo `order`).
 
 ### `GET /processes/:id`
 
@@ -648,6 +628,12 @@ Requiere token.
 
 Requiere token.
 
+### `GET /order/board`
+
+Requiere token.
+
+Devuelve las órdenes activas para el monitor/tablero de producción.
+
 ### `GET /order/audit`
 
 Requiere token.
@@ -663,19 +649,25 @@ Body:
 ```json
 {
   "date_delivery_estimated": "2026-04-10",
+  "calculation_mode": "TOTAL_REQUIRED",
   "amount_sheets": 1500,
+  "amount_sheets_additional": 0,
+  "cavities": 1,
   "total_estimated": 1500,
   "measure_id": 1,
   "paper_type_id": 2,
   "troquel_id": 3,
-  "product_customer_id": 4,
-  "processes": [1, 2, 3]
+  "product_id": 4,
+  "processes": [1, 2, 3],
+  "field_values": []
 }
 ```
 
 Notas:
 
 - `date_delivery_estimated` en creación puede ir `null` o vacío.
+- `calculation_mode` acepta `TOTAL_REQUIRED` o `SHEETS_REQUIRED`; determina si se calcula `amount_sheets` a partir de `total_estimated` o al revés.
+- `product_id` reemplaza al antiguo `product_customer_id`. El `product.troquel_id` debe coincidir con el `troquel_id` de la orden.
 - `processes` debe llevar al menos un proceso.
 
 ### `PUT /order/:id`
@@ -687,13 +679,17 @@ Body:
 ```json
 {
   "date_delivery_estimated": "2026-04-10",
+  "calculation_mode": "TOTAL_REQUIRED",
   "amount_sheets": 1500,
+  "amount_sheets_additional": 0,
+  "cavities": 1,
   "total_estimated": 1500,
   "measure_id": 1,
   "paper_type_id": 2,
   "troquel_id": 3,
-  "product_customer_id": 4,
+  "product_id": 4,
   "processes": [1, 2, 3],
+  "field_values": [],
   "order_status": "PENDIENTE"
 }
 ```

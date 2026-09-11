@@ -1,6 +1,7 @@
 import { prisma } from "../config/db.js";
 import { emitProductionChange } from "../utils/realtime.js";
 import { parseTroquelSearchTerm } from "../utils/troquel.js";
+import { syncDynamicFieldValues } from "../utils/syncDynamicFieldValues.js";
 
 const finishedOrderStatuses = ["TERMINADO", "ENTREGADO"];
 const activeOrderStatuses = ["PENDIENTE", "EN_PROCESO"];
@@ -65,7 +66,10 @@ const orderListSelect = {
   date_delivery_estimated: true,
   order_status: true,
   amount_sheets: true,
+  amount_sheets_additional: true,
   total_estimated: true,
+  total_delivered: true,
+  total_damaged: true,
   product: {
     select: {
       name: true,
@@ -82,6 +86,18 @@ const orderListSelect = {
         },
       },
     },
+  },
+  detail_production_orders: {
+    select: {
+      process_state: true,
+      process: {
+        select: {
+          name: true,
+          order: true,
+        },
+      },
+    },
+    orderBy: [{ process: { order: "asc" } }, { id: "asc" }],
   },
 };
 
@@ -240,6 +256,7 @@ const normalizePositiveInteger = (value) => {
 const calculateOrderQuantities = ({
   calculation_mode,
   amount_sheets,
+  amount_sheets_additional,
   total_estimated,
   cavities,
   measure,
@@ -256,6 +273,8 @@ const calculateOrderQuantities = ({
   const unitsPerSheet = sheetDivisions * normalizedCavities;
   const normalizedAmountSheets = normalizePositiveInteger(amount_sheets);
   const normalizedTotalEstimated = normalizePositiveInteger(total_estimated);
+  const normalizedAmountSheetsAdditional =
+    normalizeNonNegativeInteger(amount_sheets_additional);
 
   const effectiveMode =
     calculation_mode === "SHEETS_REQUIRED" ||
@@ -274,6 +293,7 @@ const calculateOrderQuantities = ({
 
     return {
       amount_sheets: Math.ceil(normalizedTotalEstimated / unitsPerSheet),
+      amount_sheets_additional: normalizedAmountSheetsAdditional,
       total_estimated: normalizedTotalEstimated,
       cavities: normalizedCavities,
       sheet_divisions: sheetDivisions,
@@ -290,6 +310,7 @@ const calculateOrderQuantities = ({
 
   return {
     amount_sheets: normalizedAmountSheets,
+    amount_sheets_additional: normalizedAmountSheetsAdditional,
     total_estimated: normalizedAmountSheets * unitsPerSheet,
     cavities: normalizedCavities,
     sheet_divisions: sheetDivisions,
@@ -510,10 +531,21 @@ const deleteOrderDetailDependencies = async (tx, headerOrderId) => {
   });
 };
 
+const normalizeNonNegativeInteger = (value) => {
+  const normalizedValue = Number(value);
+
+  if (!Number.isFinite(normalizedValue) || normalizedValue < 0) {
+    return 0;
+  }
+
+  return Math.floor(normalizedValue);
+};
+
 const validateOrderPayload = async ({
   // date_delivery_estimated,
   calculation_mode,
   amount_sheets,
+  amount_sheets_additional,
   cavities,
   total_estimated,
   measure_id,
@@ -597,6 +629,7 @@ const validateOrderPayload = async ({
   const calculatedQuantities = calculateOrderQuantities({
     calculation_mode,
     amount_sheets,
+    amount_sheets_additional,
     total_estimated,
     cavities,
     measure,
@@ -638,6 +671,7 @@ const createOrder = async (req, res) => {
       date_delivery_estimated,
       calculation_mode,
       amount_sheets,
+      amount_sheets_additional,
       cavities,
       total_estimated,
       measure_id,
@@ -645,12 +679,14 @@ const createOrder = async (req, res) => {
       troquel_id,
       product_id,
       processes,
+      field_values,
     } = req.body;
 
     const validationResult = await validateOrderPayload({
       date_delivery_estimated,
       calculation_mode,
       amount_sheets: Number(amount_sheets),
+      amount_sheets_additional: Number(amount_sheets_additional),
       cavities: Number(cavities),
       total_estimated: Number(total_estimated),
       measure_id,
@@ -675,6 +711,8 @@ const createOrder = async (req, res) => {
           ? new Date(date_delivery_estimated)
           : null,
         amount_sheets: calculatedQuantities.amount_sheets,
+        amount_sheets_additional:
+          calculatedQuantities.amount_sheets_additional,
         cavities: calculatedQuantities.cavities,
         total_estimated: calculatedQuantities.total_estimated,
         measure_id: Number(measure_id),
@@ -695,6 +733,15 @@ const createOrder = async (req, res) => {
       },
       include: orderInclude,
     });
+
+    for (const detail of order.detail_production_orders) {
+      await syncDynamicFieldValues(
+        prisma,
+        detail.id,
+        detail.process_id,
+        field_values,
+      );
+    }
 
     res.status(201).json({
       status: "success",
@@ -1023,6 +1070,7 @@ const updateOrder = async (req, res) => {
       date_delivery_estimated,
       calculation_mode,
       amount_sheets,
+      amount_sheets_additional,
       cavities,
       total_estimated,
       measure_id,
@@ -1031,12 +1079,14 @@ const updateOrder = async (req, res) => {
       product_id,
       processes,
       order_status,
+      field_values,
     } = req.body;
 
     const validationResult = await validateOrderPayload({
       date_delivery_estimated,
       calculation_mode,
       amount_sheets: Number(amount_sheets),
+      amount_sheets_additional: Number(amount_sheets_additional),
       cavities: Number(cavities),
       total_estimated: Number(total_estimated),
       measure_id,
@@ -1058,13 +1108,15 @@ const updateOrder = async (req, res) => {
     const updatedOrder = await prisma.$transaction(async (tx) => {
       await deleteOrderDetailDependencies(tx, orderId);
 
-      return tx.header_Production_Order.update({
+      const order = await tx.header_Production_Order.update({
         where: { id: orderId },
         data: {
           date_delivery_estimated: date_delivery_estimated
             ? new Date(date_delivery_estimated)
             : null,
           amount_sheets: calculatedQuantities.amount_sheets,
+          amount_sheets_additional:
+            calculatedQuantities.amount_sheets_additional,
           cavities: calculatedQuantities.cavities,
           total_estimated: calculatedQuantities.total_estimated,
           measure_id: Number(measure_id),
@@ -1085,6 +1137,17 @@ const updateOrder = async (req, res) => {
         },
         include: orderInclude,
       });
+
+      for (const detail of order.detail_production_orders) {
+        await syncDynamicFieldValues(
+          tx,
+          detail.id,
+          detail.process_id,
+          field_values,
+        );
+      }
+
+      return order;
     });
 
     res.status(200).json({
