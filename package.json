@@ -7,13 +7,16 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
-    "start:prod": "npx prisma migrate deploy && npx prisma db seed && node src/server.js",
+    "start:prod": "npx prisma migrate deploy && node src/server.js",
     "seed:orders:500": "node prisma/seed.js --bulk-orders=500",
     "db:up": "brew services start postgresql@14",
     "db:down": "brew services stop postgresql@14",
     "db:status": "brew services list | grep postgresql@14",
     "db:migrate": "npx prisma migrate deploy",
     "db:seed": "npx prisma db seed",
+    "seed:catalogs": "node prisma/seed.js --mode=catalogs",
+    "seed:demo": "node prisma/seed.js --mode=demo",
+    "seed:admin": "node prisma/seed.js --mode=admin",
     "db:reset": "npx prisma migrate reset --force"
   },
   "prisma": {
@@ -29,9 +32,7 @@
     "jsonwebtoken": "^9.0.3",
     "morgan": "^1.10.1",
     "multer": "^2.1.1",
+    "prisma": "^5.22.0",
     "socket.io": "^4.8.3"
-  },
-  "devDependencies": {
-    "prisma": "^5.22.0"
   }
 }

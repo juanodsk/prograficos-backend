@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
@@ -2584,6 +2585,43 @@ async function seedUsers() {
   }
 }
 
+// Administrador para producción: toma email y contraseña de variables de
+// entorno (no hay credenciales quemadas). No resetea la contraseña si el
+// usuario ya existe, para no pisar un cambio hecho en la app.
+async function seedAdmin() {
+  const email = process.env.ADMIN_EMAIL?.trim();
+  const password = process.env.ADMIN_PASSWORD;
+
+  if (!email || !password) {
+    console.warn(
+      "⚠️ seed:admin requiere ADMIN_EMAIL y ADMIN_PASSWORD. Operación omitida.",
+    );
+    return;
+  }
+
+  const name = process.env.ADMIN_NAME?.trim() || "Administrador";
+  const surename = process.env.ADMIN_SURENAME?.trim() || "Prográficos";
+  const salt = await bcrypt.genSalt(10);
+
+  await prisma.user.upsert({
+    where: { email },
+    update: {
+      role: "ADMIN",
+      is_active: true,
+    },
+    create: {
+      name,
+      surename,
+      email,
+      password: await bcrypt.hash(password, salt),
+      role: "ADMIN",
+      is_active: true,
+    },
+  });
+
+  console.log(`✅ Administrador listo (${email})`);
+}
+
 async function seedProcesses(machineryByRef = {}) {
   for (const blueprint of processBlueprints) {
     const process = await prisma.process.upsert({
@@ -3052,13 +3090,16 @@ async function seedBulkOrders(bulkOrdersCount) {
   }
 }
 
-async function main() {
-  console.log("🌱 Iniciando seed...");
-  const bulkOrdersCount = parseBulkOrdersCount();
+// Modo del seed: "catalogs" (maestros, seguro en producción),
+// "demo" (usuarios y órdenes de prueba, solo local) o "all" (ambos).
+function parseSeedMode() {
+  const arg = process.argv.find((value) => value.startsWith("--mode="));
+  const mode = arg?.split("=")[1] || process.env.SEED_MODE || "all";
+  return ["catalogs", "demo", "admin", "all"].includes(mode) ? mode : "all";
+}
 
-  await seedUsers();
-  console.log("✅ Usuarios listos");
-
+// Catálogos / datos maestros. Idempotente y seguro para producción.
+async function seedCatalogs() {
   const machineryByRef = await seedMachinery();
   console.log("✅ Maquinaria lista");
 
@@ -3082,11 +3123,36 @@ async function main() {
 
   await seedProducts();
   console.log("✅ Productos listos");
+}
+
+// Datos de prueba/relleno. NO ejecutar en producción: crea usuarios con
+// contraseñas conocidas y órdenes ficticias. Requiere catálogos ya sembrados.
+async function seedDemo(bulkOrdersCount) {
+  await seedUsers();
+  console.log("✅ Usuarios demo listos");
 
   await seedDemoOrders();
   console.log("✅ Órdenes demo listas");
 
   await seedBulkOrders(bulkOrdersCount);
+}
+
+async function main() {
+  const mode = parseSeedMode();
+  console.log(`🌱 Iniciando seed (modo: ${mode})...`);
+  const bulkOrdersCount = parseBulkOrdersCount();
+
+  if (mode === "catalogs" || mode === "all") {
+    await seedCatalogs();
+  }
+
+  if (mode === "demo" || mode === "all") {
+    await seedDemo(bulkOrdersCount);
+  }
+
+  if (mode === "admin") {
+    await seedAdmin();
+  }
 
   console.log("🎉 Seed ejecutado correctamente");
 }
