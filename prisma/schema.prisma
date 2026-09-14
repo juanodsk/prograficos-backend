@@ -307,8 +307,6 @@ model Troqueles {
   elaboration_date DateTime @default(now())
   code             String?
   size             Size
-  file_name        String? 
-  file             String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime  @default(now())
 
@@ -316,9 +314,29 @@ model Troqueles {
 
   header_production_orders Header_Production_Order[]
   products                 Product[]
+  images                   Troquel_Image[]
 
   @@unique([size, code])
   @@map("troqueles")
+}
+
+//////////////////////////////////////////////////////
+// TROQUEL IMAGE (fotos de referencia, almacenadas en R2)
+//////////////////////////////////////////////////////
+
+model Troquel_Image {
+  id          Int       @id @default(autoincrement())
+  troquel_id  Int
+  storage_key String // key del objeto en R2; la URL pública se firma al leer
+  mime        String
+  size        Int
+  sort_order  Int
+  is_active   Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+
+  troquel Troqueles @relation(fields: [troquel_id], references: [id])
+
+  @@map("troquel_images")
 }
 
 //////////////////////////////////////////////////////

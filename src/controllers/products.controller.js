@@ -14,7 +14,6 @@ const productInclude = {
       id: true,
       code: true,
       size: true,
-      file_name: true,
       elaboration_date: true,
     },
   },
@@ -60,13 +59,6 @@ const buildProductSearchWhere = (rawSearch) => {
       troquel: {
         is: {
           code: buildInsensitiveContains(search),
-        },
-      },
-    },
-    {
-      troquel: {
-        is: {
-          file_name: buildInsensitiveContains(search),
         },
       },
     },

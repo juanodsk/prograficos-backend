@@ -24,7 +24,6 @@ const thirdDetailInclude = {
           id: true,
           code: true,
           size: true,
-          file_name: true,
           elaboration_date: true,
           is_active: true,
         },
