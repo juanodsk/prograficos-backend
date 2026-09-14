@@ -1,5 +1,4 @@
 import { prisma } from "../config/db.js";
-import multer from "multer";
 import { buildActiveWhere, normalizeIsActive } from "../utils/active.js";
 import {
   buildInsensitiveContains,
@@ -9,12 +8,12 @@ import {
   parseSort,
 } from "../utils/pagination.js";
 import { parseTroquelSearchTerm } from "../utils/troquel.js";
-
-// Configuracion de multer para archivos en memoria (20MB maximo)
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 },
-});
+import { HttpError } from "../utils/httpError.js";
+import {
+  attachTroquelImages,
+  listTroquelImages,
+  removeTroquelImage,
+} from "../services/troquelImage.service.js";
 
 const parseTroquelId = (id) => parseInt(id, 10);
 
@@ -88,10 +87,7 @@ const buildTroquelSearchWhere = (rawSearch) => {
     };
   }
 
-  const or = [
-    { code: buildInsensitiveContains(search) },
-    { file_name: buildInsensitiveContains(search) },
-  ];
+  const or = [{ code: buildInsensitiveContains(search) }];
 
   if (!Number.isNaN(numericSearch)) {
     or.push({ id: numericSearch });
@@ -118,7 +114,6 @@ const troquelSortMap = {
   code: (direction) => [{ code: direction }],
   size: (direction) => [{ size: direction }],
   elaboration_date: (direction) => [{ elaboration_date: direction }],
-  file: (direction) => [{ file_name: direction }],
   is_active: (direction) => [{ is_active: direction }, { id: "asc" }],
 };
 
@@ -127,17 +122,20 @@ const troquelListSelect = {
   elaboration_date: true,
   code: true,
   size: true,
-  file_name: true,
   createdAt: true,
   updatedAt: true,
   is_active: true,
+  _count: {
+    select: {
+      images: { where: { is_active: true } },
+    },
+  },
 };
 
 // ───────────── CREAR TROQUEL ─────────────
 const createTroqueles = async (req, res) => {
   try {
     const { code, elaboration_date, size, is_active } = req.body;
-    const file = req.file;
     const normalizedCode = code?.trim();
     const codeError = validateTroquelCode(normalizedCode);
 
@@ -175,8 +173,6 @@ const createTroqueles = async (req, res) => {
           : new Date(),
         size,
         is_active: normalizeIsActive(is_active, true),
-        file: file ? file.buffer.toString("base64") : null,
-        file_name: file?.originalname || null,
       },
     });
 
@@ -228,10 +224,16 @@ const getTroqueles = async (req, res) => {
       take: meta.pageSize,
     });
 
+    // Expone total_images (conteo de imágenes activas) y oculta el _count crudo.
+    const data = troqueles.map(({ _count, ...troquel }) => ({
+      ...troquel,
+      total_images: _count?.images ?? 0,
+    }));
+
     res.status(200).json({
       status: "success",
       message: "Troqueles obtenidos exitosamente",
-      data: troqueles,
+      data,
       meta,
     });
   } catch (error) {
@@ -284,9 +286,10 @@ const getTroquelesById = async (req, res) => {
 const updateTroqueles = async (req, res) => {
   try {
     const troquelId = parseTroquelId(req.params.id);
-    const { code, elaboration_date, size, is_active } = req.body;
-    const normalizedCode = code?.trim();
-    const codeError = validateTroquelCode(normalizedCode);
+    // code y size son INMUTABLES: un troquel es una tabla física de cuchillas,
+    // su tamaño/código no cambian nunca. Se ignora cualquier code/size que
+    // llegue en el body (el backend es la autoridad, no el cliente).
+    const { elaboration_date, is_active } = req.body;
 
     if (Number.isNaN(troquelId)) {
       return res.status(400).json({
@@ -306,48 +309,12 @@ const updateTroqueles = async (req, res) => {
       });
     }
 
-    if (codeError) {
-      return res.status(400).json({
-        status: "error",
-        message: codeError,
-      });
-    }
-
-    const normalizedSize = size || troquelExists.size;
-
-    if (!normalizedSize || !knownSizes.includes(normalizedSize)) {
-      return res.status(400).json({
-        status: "error",
-        message: "El tamaño del troquel es obligatorio",
-      });
-    }
-
-    const duplicateTroquel = await findTroquelBySizeAndCode({
-      code: normalizedCode,
-      size: normalizedSize,
-      excludeId: troquelId,
-    });
-
-    if (duplicateTroquel) {
-      return res.status(409).json({
-        status: "warning",
-        message: duplicateCodeMessage,
-      });
-    }
-
     const dataToUpdate = {
-      code: normalizedCode,
       elaboration_date: elaboration_date
         ? new Date(elaboration_date)
         : troquelExists.elaboration_date,
-      size: normalizedSize,
       is_active: normalizeIsActive(is_active, troquelExists.is_active),
     };
-
-    if (req.file) {
-      dataToUpdate.file = req.file.buffer.toString("base64");
-      dataToUpdate.file_name = req.file.originalname || troquelExists.file_name;
-    }
 
     const troquel = await prisma.troqueles.update({
       where: { id: troquelId },
@@ -433,11 +400,90 @@ const deleteTroqueles = async (req, res) => {
   }
 };
 
+// ───────────── IMÁGENES DE TROQUEL (R2) ─────────────
+const handleTroquelServiceError = (res, error, fallbackMessage) => {
+  if (error instanceof HttpError) {
+    return res
+      .status(error.status)
+      .json({ status: "error", message: error.message });
+  }
+  console.error(error);
+  return res.status(500).json({ status: "error", message: fallbackMessage });
+};
+
+const getTroquelImages = async (req, res) => {
+  try {
+    const troquelId = parseTroquelId(req.params.id);
+
+    if (Number.isNaN(troquelId)) {
+      return res
+        .status(400)
+        .json({ status: "error", message: "El id del troquel no es valido" });
+    }
+
+    const images = await listTroquelImages(troquelId);
+
+    res.status(200).json({
+      status: "success",
+      message: "Imágenes obtenidas exitosamente",
+      data: images,
+    });
+  } catch (error) {
+    handleTroquelServiceError(res, error, "Error al obtener las imágenes");
+  }
+};
+
+const uploadTroquelImagesController = async (req, res) => {
+  try {
+    const troquelId = parseTroquelId(req.params.id);
+
+    if (Number.isNaN(troquelId)) {
+      return res
+        .status(400)
+        .json({ status: "error", message: "El id del troquel no es valido" });
+    }
+
+    const images = await attachTroquelImages(troquelId, req.files);
+
+    res.status(201).json({
+      status: "success",
+      message: "Imágenes guardadas exitosamente",
+      data: images,
+    });
+  } catch (error) {
+    handleTroquelServiceError(res, error, "Error al guardar las imágenes");
+  }
+};
+
+const deleteTroquelImage = async (req, res) => {
+  try {
+    const troquelId = parseTroquelId(req.params.id);
+    const imageId = parseTroquelId(req.params.imageId);
+
+    if (Number.isNaN(troquelId) || Number.isNaN(imageId)) {
+      return res
+        .status(400)
+        .json({ status: "error", message: "El id no es valido" });
+    }
+
+    await removeTroquelImage(troquelId, imageId);
+
+    res.status(200).json({
+      status: "success",
+      message: "Imagen eliminada exitosamente",
+    });
+  } catch (error) {
+    handleTroquelServiceError(res, error, "Error al eliminar la imagen");
+  }
+};
+
 export {
   createTroqueles,
   getTroqueles,
   getTroquelesById,
   updateTroqueles,
   deleteTroqueles,
-  upload,
+  getTroquelImages,
+  uploadTroquelImagesController,
+  deleteTroquelImage,
 };
