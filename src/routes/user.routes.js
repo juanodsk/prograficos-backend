@@ -1,6 +1,7 @@
 import express from "express";
 import {
   getUsers,
+  getOperators,
   createUser,
   getUserById,
   updateUser,
@@ -12,6 +13,12 @@ import { verifyToken } from "../middlewares/auth.middleware.js";
 const router = express.Router();
 
 router.get("/", verifyToken, authorizeRoles("ADMIN", "SUPERVISOR"), getUsers);
+router.get(
+  "/operators",
+  verifyToken,
+  authorizeRoles("ADMIN", "SUPERVISOR"),
+  getOperators,
+);
 router.post(
   "/create",
   verifyToken,
