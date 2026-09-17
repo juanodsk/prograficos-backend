@@ -288,6 +288,7 @@ model Product {
   name       String?
   troquel_id Int
   third_id   Int
+  sale_price Decimal? @db.Decimal(12, 2)
 
   is_active Boolean @default(true)
 
