@@ -26,7 +26,7 @@ router.get("/:id", verifyToken, getOrderById);
 router.put(
   "/:id",
   verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR", "EMPLOYEE"),
+  authorizeRoles("ADMIN", "SUPERVISOR", "OPERATOR"),
   updateOrder,
 );
 router.delete(

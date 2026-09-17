@@ -121,7 +121,7 @@ const userSeeds = [
     surename: "Operario",
     email: "operario@prograficos.com",
     password: "operario123",
-    role: "EMPLOYEE",
+    role: "OPERATOR",
   },
 ];
 

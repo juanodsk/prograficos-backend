@@ -19,13 +19,13 @@ router.post(
 router.get(
   "/:id",
   verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR", "EMPLOYEE", "USER"),
+  authorizeRoles("ADMIN", "SUPERVISOR", "OPERATOR", "USER"),
   getProduct,
 );
 router.get(
   "/",
   verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR", "EMPLOYEE", "USER"),
+  authorizeRoles("ADMIN", "SUPERVISOR", "OPERATOR", "USER"),
   getProducts,
 );
 router.put(

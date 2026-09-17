@@ -7,7 +7,7 @@ import {
   parseSort,
 } from "../utils/pagination.js";
 
-const knownRoles = ["ADMIN", "SUPERVISOR", "EMPLOYEE", "USER"];
+const knownRoles = ["ADMIN", "SUPERVISOR", "OPERATOR", "USER"];
 
 const buildUserSearchWhere = (rawSearch) => {
   const search = rawSearch?.trim();
@@ -99,7 +99,7 @@ const createUser = async (req, res) => {
       });
     }
 
-    const validRoles = ["ADMIN", "SUPERVISOR", "EMPLOYEE", "USER"];
+    const validRoles = ["ADMIN", "SUPERVISOR", "OPERATOR", "USER"];
     if (role && !validRoles.includes(role)) {
       return res.status(400).json({ message: "Rol inválido" });
     }
@@ -208,14 +208,14 @@ const updateUser = async (req, res) => {
 
     // Validación cambio de rol
     if (role) {
-      const rolesPermitidosSupervisor = ["EMPLOYEE", "USER", "SUPERVISOR"];
+      const rolesPermitidosSupervisor = ["OPERATOR", "USER", "SUPERVISOR"];
 
       if (
         req.user.role === "SUPERVISOR" &&
         !rolesPermitidosSupervisor.includes(role)
       ) {
         return res.status(403).json({
-          message: "Un supervisor solo puede asignar roles EMPLOYEE o USER",
+          message: "Un supervisor solo puede asignar roles OPERATOR o USER",
         });
       }
 

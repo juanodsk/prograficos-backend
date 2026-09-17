@@ -15,8 +15,9 @@ datasource db {
 enum Role {
   ADMIN
   SUPERVISOR
-  EMPLOYEE
+  OPERATOR
   USER
+  CUSTOMER
 }
 
 enum Thirds_type {
