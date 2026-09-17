@@ -278,8 +278,13 @@ const startOrderProcess = async (req, res) => {
       });
     }
 
-    const { machinery_id, measure_cutting_id, observations, field_values } =
-      req.body;
+    const {
+      machinery_id,
+      operator_user_id,
+      measure_cutting_id,
+      observations,
+      field_values,
+    } = req.body;
 
     const detail = await prisma.detail_Production_Order.findUnique({
       where: { id: detailId },
@@ -379,6 +384,37 @@ const startOrderProcess = async (req, res) => {
       }
     }
 
+    // Operario que trabaja el proceso. Si se envía, debe estar asignado a la
+    // maquinaria (pivote) y estar activo. Si no se envía, se usa el de sesión.
+    let resolvedOperatorId = req.user.id;
+    if (operator_user_id != null && operator_user_id !== "") {
+      const operatorId = Number(operator_user_id);
+      if (Number.isNaN(operatorId)) {
+        return res.status(400).json({
+          status: "error",
+          message: "El operario seleccionado no es válido",
+        });
+      }
+
+      const operatorLink = await prisma.machineryOperator.findFirst({
+        where: {
+          machinery_id: requestedMachineryId,
+          user_id: operatorId,
+          user: { is_active: true, operates_machinery: true },
+        },
+      });
+
+      if (!operatorLink) {
+        return res.status(400).json({
+          status: "error",
+          message:
+            "El operario seleccionado no está asignado a esa maquinaria o está inactivo",
+        });
+      }
+
+      resolvedOperatorId = operatorId;
+    }
+
     // Los campos que se diligencian en el detalle son obligatorios; solo las
     // observaciones son opcionales. Los BOOLEAN siempre tienen valor y la firma
     // del operario se excluye.
@@ -435,7 +471,7 @@ const startOrderProcess = async (req, res) => {
           start_date: detail.start_date || now,
           start_hour: detail.start_hour || now,
           process_state: "EN_PROCESO",
-          user_id: req.user.id,
+          user_id: resolvedOperatorId,
           machinery_id:
             requestedMachineryId != null
               ? requestedMachineryId
@@ -585,7 +621,7 @@ const finishOrderProcess = async (req, res) => {
           end_date: now,
           end_hour: now,
           process_state: "TERMINADO",
-          user_id: req.user.id,
+          // No se sobrescribe user_id: se conserva el operario elegido al iniciar.
           quantity_delivered: Number(quantity_delivered),
           quantity_damaged: Number(quantity_damaged),
         },

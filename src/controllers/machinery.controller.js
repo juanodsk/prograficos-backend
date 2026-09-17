@@ -11,6 +11,37 @@ const normalizeMachineryPayload = (body, fallbackIsActive = true) => ({
   is_active: normalizeIsActive(body?.is_active, fallbackIsActive),
 });
 
+// operator_ids: ids únicos, enteros y positivos. Vacío = sin operarios (válido).
+const normalizeOperatorIds = (body) => {
+  const raw = body?.operator_ids;
+  if (!Array.isArray(raw)) return [];
+  const ids = raw
+    .map((value) => Number(value))
+    .filter((value) => Number.isInteger(value) && value > 0);
+  return [...new Set(ids)];
+};
+
+// El backend es la autoridad: todos deben operar maquinaria (flag) y estar
+// activos, sin importar el rol.
+const validateOperatorIds = async (ids) => {
+  if (ids.length === 0) return null;
+  const count = await prisma.user.count({
+    where: { id: { in: ids }, operates_machinery: true, is_active: true },
+  });
+  if (count !== ids.length) {
+    return "Uno o más operarios seleccionados no son válidos o no operan maquinaria";
+  }
+  return null;
+};
+
+const machineryOperatorsInclude = {
+  operators: {
+    include: {
+      user: { select: { id: true, name: true, surename: true, email: true } },
+    },
+  },
+};
+
 const findMachineryByReference = (reference, excludeId = null) =>
   prisma.machinery.findFirst({
     where: {
@@ -57,8 +88,18 @@ const createMachinery = async (req, res) => {
       });
     }
 
+    const operatorIds = normalizeOperatorIds(req.body);
+    const operatorError = await validateOperatorIds(operatorIds);
+    if (operatorError) {
+      return res.status(400).json({ status: "error", message: operatorError });
+    }
+
     const machinery = await prisma.machinery.create({
-      data: payload,
+      data: {
+        ...payload,
+        operators: { create: operatorIds.map((user_id) => ({ user_id })) },
+      },
+      include: machineryOperatorsInclude,
     });
     res.status(201).json({
       status: "success",
@@ -119,6 +160,7 @@ const getMachinery = async (req, res) => {
     const machinery = await prisma.machinery.findMany({
       where: buildActiveWhere(req.query),
       orderBy: [{ name: "asc" }, { reference: "asc" }],
+      include: machineryOperatorsInclude,
     });
     res.status(200).json({
       status: "success",
@@ -139,6 +181,7 @@ const getMachineryById = async (req, res) => {
       where: {
         id: parseInt(id),
       },
+      include: machineryOperatorsInclude,
     });
     if (!machinery) {
       return res.status(404).json({
@@ -207,11 +250,25 @@ const updateMachinery = async (req, res) => {
       });
     }
 
+    const operatorIds = normalizeOperatorIds(req.body);
+    const operatorError = await validateOperatorIds(operatorIds);
+    if (operatorError) {
+      return res.status(400).json({ status: "error", message: operatorError });
+    }
+
     const machinery = await prisma.machinery.update({
       where: {
         id: parseInt(id),
       },
-      data: payload,
+      data: {
+        ...payload,
+        // Reemplaza el conjunto de operarios por el nuevo.
+        operators: {
+          deleteMany: {},
+          create: operatorIds.map((user_id) => ({ user_id })),
+        },
+      },
+      include: machineryOperatorsInclude,
     });
     res.status(200).json({
       status: "success",
@@ -246,22 +303,46 @@ const deleteMachinery = async (req, res) => {
       });
     }
 
-    const machinery = await prisma.machinery.update({
-      where: {
-        id: parseInt(id),
-      },
-      data: { is_active: false },
-    });
+    const machineryId = parseInt(id);
+
+    // Borrado real solo si NO tiene asociaciones que intervengan:
+    // procesos vinculados (process_machinery) ni uso en órdenes de producción.
+    const [processCount, productionCount] = await Promise.all([
+      prisma.processMachinery.count({ where: { machinery_id: machineryId } }),
+      prisma.detail_Production_Order.count({
+        where: { machinery_id: machineryId },
+      }),
+    ]);
+
+    if (processCount > 0 || productionCount > 0) {
+      return res.status(400).json({
+        status: "error",
+        message:
+          "No se puede eliminar la máquina porque tiene procesos u órdenes asociadas. Puedes inactivarla desde la edición.",
+      });
+    }
+
+    await prisma.machinery.delete({ where: { id: machineryId } });
+
     res.status(200).json({
       status: "success",
-      message: "Máquina desactivada exitosamente",
-      data: machinery,
+      message: "Máquina eliminada exitosamente",
     });
   } catch (error) {
     console.log(error);
+
+    // Salvaguarda: si una FK impide el borrado, lo tratamos como asociación.
+    if (error?.code === "P2003") {
+      return res.status(400).json({
+        status: "error",
+        message:
+          "No se puede eliminar la máquina porque tiene registros asociados. Puedes inactivarla desde la edición.",
+      });
+    }
+
     res.status(500).json({
       status: "error",
-      message: "Error al desactivar la máquina",
+      message: "Error al eliminar la máquina",
     });
   }
 };

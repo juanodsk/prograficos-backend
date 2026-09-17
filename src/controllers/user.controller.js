@@ -7,7 +7,7 @@ import {
   parseSort,
 } from "../utils/pagination.js";
 
-const knownRoles = ["ADMIN", "SUPERVISOR", "EMPLOYEE", "USER"];
+const knownRoles = ["ADMIN", "SUPERVISOR", "OPERATOR", "USER"];
 
 const buildUserSearchWhere = (rawSearch) => {
   const search = rawSearch?.trim();
@@ -71,6 +71,7 @@ const getUsers = async (req, res) => {
         role: true,
         avatar: true,
         is_active: true,
+        operates_machinery: true,
         createdAt: true,
       },
       orderBy: userSortMap[sortBy](sortDirection),
@@ -90,7 +91,8 @@ const getUsers = async (req, res) => {
 
 const createUser = async (req, res) => {
   try {
-    const { name, surename, email, password, role, avatar, is_active } = req.body;
+    const { name, surename, email, password, role, avatar, is_active, operates_machinery } =
+      req.body;
 
     // Solo ADMIN puede crear usuarios ADMIN
     if (role === "ADMIN" && req.user.role !== "ADMIN") {
@@ -99,7 +101,7 @@ const createUser = async (req, res) => {
       });
     }
 
-    const validRoles = ["ADMIN", "SUPERVISOR", "EMPLOYEE", "USER"];
+    const validRoles = ["ADMIN", "SUPERVISOR", "OPERATOR", "USER"];
     if (role && !validRoles.includes(role)) {
       return res.status(400).json({ message: "Rol inválido" });
     }
@@ -128,6 +130,7 @@ const createUser = async (req, res) => {
         password: hashedPassword,
         role: role || "USER",
         is_active: is_active !== undefined ? Boolean(is_active) : true,
+        operates_machinery: Boolean(operates_machinery),
         ...(avatar && { avatar }),
       },
       select: {
@@ -138,6 +141,7 @@ const createUser = async (req, res) => {
         role: true,
         avatar: true,
         is_active: true,
+        operates_machinery: true,
       },
     });
 
@@ -168,6 +172,7 @@ const getUserById = async (req, res) => {
         role: true,
         avatar: true,
         is_active: true,
+        operates_machinery: true,
       },
     });
 
@@ -187,7 +192,8 @@ const getUserById = async (req, res) => {
 const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, surename, email, password, role, avatar, is_active } = req.body;
+    const { name, surename, email, password, role, avatar, is_active, operates_machinery } =
+      req.body;
 
     const userExists = await prisma.user.findUnique({
       where: {
@@ -208,14 +214,14 @@ const updateUser = async (req, res) => {
 
     // Validación cambio de rol
     if (role) {
-      const rolesPermitidosSupervisor = ["EMPLOYEE", "USER", "SUPERVISOR"];
+      const rolesPermitidosSupervisor = ["OPERATOR", "USER", "SUPERVISOR"];
 
       if (
         req.user.role === "SUPERVISOR" &&
         !rolesPermitidosSupervisor.includes(role)
       ) {
         return res.status(403).json({
-          message: "Un supervisor solo puede asignar roles EMPLOYEE o USER",
+          message: "Un supervisor solo puede asignar roles OPERATOR o USER",
         });
       }
 
@@ -243,6 +249,9 @@ const updateUser = async (req, res) => {
         ...(role && { role }),
         ...(avatar && { avatar }),
         ...(is_active !== undefined && { is_active: Boolean(is_active) }),
+        ...(operates_machinery !== undefined && {
+          operates_machinery: Boolean(operates_machinery),
+        }),
       },
       select: {
         id: true,
@@ -252,6 +261,7 @@ const updateUser = async (req, res) => {
         role: true,
         avatar: true,
         is_active: true,
+        operates_machinery: true,
         createdAt: true,
       },
     });
@@ -314,4 +324,35 @@ const deleteUser = async (req, res) => {
   }
 };
 
-export { getUsers, createUser, getUserById, updateUser, deleteUser };
+// Lista de usuarios que operan maquinaria (flag operates_machinery) y activos,
+// sin importar el rol (un SUPERVISOR también puede operar).
+const getOperators = async (_req, res) => {
+  try {
+    const operators = await prisma.user.findMany({
+      where: { operates_machinery: true, is_active: true },
+      select: { id: true, name: true, surename: true, email: true },
+      orderBy: [{ name: "asc" }, { surename: "asc" }],
+    });
+
+    res.status(200).json({
+      status: "success",
+      message: "Operarios obtenidos exitosamente",
+      data: operators,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      status: "error",
+      message: "Error al obtener los operarios",
+    });
+  }
+};
+
+export {
+  getUsers,
+  getOperators,
+  createUser,
+  getUserById,
+  updateUser,
+  deleteUser,
+};

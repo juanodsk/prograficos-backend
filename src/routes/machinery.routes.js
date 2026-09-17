@@ -22,7 +22,7 @@ router.post(
 router.get(
   "/",
   verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR", "EMPLOYEE", "USER"),
+  authorizeRoles("ADMIN", "SUPERVISOR", "OPERATOR", "USER"),
   getMachinery,
 );
 router.get(
@@ -34,7 +34,7 @@ router.get(
 router.get(
   "/:id",
   verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR", "EMPLOYEE", "USER"),
+  authorizeRoles("ADMIN", "SUPERVISOR", "OPERATOR", "USER"),
   getMachineryById,
 );
 router.put(

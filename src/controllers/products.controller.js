@@ -119,10 +119,19 @@ const productSortMap = {
   is_active: (direction) => [{ is_active: direction }, { id: "asc" }],
 };
 
+// Precio de venta (COP). Opcional: "" / null / undefined => null.
+// Cualquier otro valor se convierte a número (NaN si es inválido, lo valida
+// validateProductPayload). No se usan comas de decimales (COP entero).
+const normalizeSalePrice = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  return Number(value);
+};
+
 const normalizeProductPayload = (body, currentIsActive = true) => ({
   name: body?.name?.trim() ? body.name.trim() : null,
   troquel_id: body?.troquel_id != null ? Number(body.troquel_id) : NaN,
   third_id: body?.third_id != null ? Number(body.third_id) : NaN,
+  sale_price: normalizeSalePrice(body?.sale_price),
   is_active: normalizeIsActive(body?.is_active, currentIsActive),
 });
 
@@ -133,6 +142,12 @@ const validateProductPayload = async (payload, currentProductId = null) => {
 
   if (Number.isNaN(payload.third_id)) {
     return "Debes seleccionar un tercero";
+  }
+
+  if (payload.sale_price !== null) {
+    if (!Number.isFinite(payload.sale_price) || payload.sale_price < 0) {
+      return "El precio de venta debe ser un número válido y no negativo";
+    }
   }
 
   const [troquel, third] = await Promise.all([

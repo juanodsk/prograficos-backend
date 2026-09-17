@@ -15,8 +15,9 @@ datasource db {
 enum Role {
   ADMIN
   SUPERVISOR
-  EMPLOYEE
+  OPERATOR
   USER
+  CUSTOMER
 }
 
 enum Thirds_type {
@@ -107,11 +108,13 @@ model User {
   avatar    String?  @default("https://img.freepik.com/vector-premium/icono-perfil-avatar-predeterminado-imagen-usuario-redes-sociales-icono-avatar-gris-silueta-perfil-blanco-ilustracion-vectorial_561158-3383.jpg")
 
   is_active Boolean  @default(true)
+  operates_machinery Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
   header_production_orders Header_Production_Order[]
   user                     Detail_Production_Order[] @relation("UserDetails")
+  operated_machineries     MachineryOperator[]
 
   @@map("users")
 }
@@ -183,8 +186,22 @@ model Machinery {
 
   detail_production_orders Detail_Production_Order[] @relation("MachineryDetails")
   process_machineries ProcessMachinery[]
+  operators           MachineryOperator[]
 
   @@map("machinery")
+}
+
+// Pivote maquinaria <-> usuario (operarios que pueden operar la máquina).
+model MachineryOperator {
+  id           Int @id @default(autoincrement())
+  machinery_id Int
+  user_id      Int
+
+  machinery Machinery @relation(fields: [machinery_id], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([machinery_id, user_id])
+  @@map("machinery_operators")
 }
 
 //////////////////////////////////////////////////////
@@ -287,6 +304,7 @@ model Product {
   name       String?
   troquel_id Int
   third_id   Int
+  sale_price Decimal? @db.Decimal(12, 2)
 
   is_active Boolean @default(true)
 
