@@ -246,22 +246,46 @@ const deleteMachinery = async (req, res) => {
       });
     }
 
-    const machinery = await prisma.machinery.update({
-      where: {
-        id: parseInt(id),
-      },
-      data: { is_active: false },
-    });
+    const machineryId = parseInt(id);
+
+    // Borrado real solo si NO tiene asociaciones que intervengan:
+    // procesos vinculados (process_machinery) ni uso en órdenes de producción.
+    const [processCount, productionCount] = await Promise.all([
+      prisma.processMachinery.count({ where: { machinery_id: machineryId } }),
+      prisma.detail_Production_Order.count({
+        where: { machinery_id: machineryId },
+      }),
+    ]);
+
+    if (processCount > 0 || productionCount > 0) {
+      return res.status(400).json({
+        status: "error",
+        message:
+          "No se puede eliminar la máquina porque tiene procesos u órdenes asociadas. Puedes inactivarla desde la edición.",
+      });
+    }
+
+    await prisma.machinery.delete({ where: { id: machineryId } });
+
     res.status(200).json({
       status: "success",
-      message: "Máquina desactivada exitosamente",
-      data: machinery,
+      message: "Máquina eliminada exitosamente",
     });
   } catch (error) {
     console.log(error);
+
+    // Salvaguarda: si una FK impide el borrado, lo tratamos como asociación.
+    if (error?.code === "P2003") {
+      return res.status(400).json({
+        status: "error",
+        message:
+          "No se puede eliminar la máquina porque tiene registros asociados. Puedes inactivarla desde la edición.",
+      });
+    }
+
     res.status(500).json({
       status: "error",
-      message: "Error al desactivar la máquina",
+      message: "Error al eliminar la máquina",
     });
   }
 };
