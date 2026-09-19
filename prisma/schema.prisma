@@ -42,6 +42,7 @@ enum Size {
   SMALL
   MEDIUM
   LARGE
+  EXTERNAL
 }
 
 enum Order_Status {
@@ -328,13 +329,16 @@ model Troqueles {
   createdAt        DateTime @default(now())
   updatedAt        DateTime  @default(now())
 
-  is_active Boolean @default(true)
+  is_active  Boolean   @default(true)
+  deleted_at DateTime?
 
   header_production_orders Header_Production_Order[]
   products                 Product[]
   images                   Troquel_Image[]
 
-  @@unique([size, code])
+  // Unicidad (size, code) solo entre NO borrados: se aplica con un índice único
+  // parcial creado por migración (WHERE deleted_at IS NULL), para que un soft
+  // delete libere el código y se pueda reutilizar.
   @@map("troqueles")
 }
 

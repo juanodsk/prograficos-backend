@@ -1,4 +1,5 @@
 import { prisma } from "../config/db.js";
+import { deleteObject } from "../config/r2.js";
 import { buildActiveWhere, normalizeIsActive } from "../utils/active.js";
 import {
   buildInsensitiveContains,
@@ -17,7 +18,7 @@ import {
 
 const parseTroquelId = (id) => parseInt(id, 10);
 
-const knownSizes = ["SMALL", "MEDIUM", "LARGE"];
+const knownSizes = ["SMALL", "MEDIUM", "LARGE", "EXTERNAL"];
 const troquelCodePattern = /^(?=.*[A-Za-z0-9])[A-Za-z0-9_]+$/;
 const duplicateCodeMessage =
   "El código del troquel ya está siendo utilizado para ese tamaño";
@@ -40,6 +41,7 @@ const findTroquelBySizeAndCode = ({ code, size, excludeId = null }) =>
         mode: "insensitive",
       },
       size,
+      deleted_at: null,
       ...(excludeId != null ? { id: { not: excludeId } } : {}),
     },
     select: { id: true },
@@ -209,10 +211,14 @@ const getTroqueles = async (req, res) => {
       fallbackSortBy: "elaboration_date",
       fallbackSortDirection: "desc",
     });
-    const where = buildActiveWhere(
-      req.query,
-      buildTroquelSearchWhere(req.query?.search),
-    );
+    const sizeFilter = knownSizes.includes(req.query?.size)
+      ? req.query.size
+      : null;
+    const where = {
+      ...buildActiveWhere(req.query, buildTroquelSearchWhere(req.query?.search)),
+      deleted_at: null, // los borrados (soft delete) no aparecen en la lista
+      ...(sizeFilter ? { size: sizeFilter } : {}),
+    };
     const total = await prisma.troqueles.count({ where });
     const meta = buildPaginationMeta(requestedPage, pageSize, total);
 
@@ -286,10 +292,9 @@ const getTroquelesById = async (req, res) => {
 const updateTroqueles = async (req, res) => {
   try {
     const troquelId = parseTroquelId(req.params.id);
-    // code y size son INMUTABLES: un troquel es una tabla física de cuchillas,
-    // su tamaño/código no cambian nunca. Se ignora cualquier code/size que
-    // llegue en el body (el backend es la autoridad, no el cliente).
-    const { elaboration_date, is_active } = req.body;
+    const { code, elaboration_date, size, is_active } = req.body;
+    const normalizedCode = code?.trim();
+    const codeError = validateTroquelCode(normalizedCode);
 
     if (Number.isNaN(troquelId)) {
       return res.status(400).json({
@@ -309,10 +314,41 @@ const updateTroqueles = async (req, res) => {
       });
     }
 
+    if (codeError) {
+      return res.status(400).json({
+        status: "error",
+        message: codeError,
+      });
+    }
+
+    const normalizedSize = size || troquelExists.size;
+
+    if (!normalizedSize || !knownSizes.includes(normalizedSize)) {
+      return res.status(400).json({
+        status: "error",
+        message: "El tamaño del troquel es obligatorio",
+      });
+    }
+
+    const duplicateTroquel = await findTroquelBySizeAndCode({
+      code: normalizedCode,
+      size: normalizedSize,
+      excludeId: troquelId,
+    });
+
+    if (duplicateTroquel) {
+      return res.status(409).json({
+        status: "warning",
+        message: duplicateCodeMessage,
+      });
+    }
+
     const dataToUpdate = {
+      code: normalizedCode,
       elaboration_date: elaboration_date
         ? new Date(elaboration_date)
         : troquelExists.elaboration_date,
+      size: normalizedSize,
       is_active: normalizeIsActive(is_active, troquelExists.is_active),
     };
 
@@ -366,30 +402,56 @@ const deleteTroqueles = async (req, res) => {
       });
     }
 
-    const ordersCount = await prisma.header_Production_Order.count({
-      where: {
-        troquel_id: troquelId,
-        is_active: true,
-      },
+    // ¿Tiene productos asociados? (cualquiera, activo o inactivo)
+    const productsCount = await prisma.product.count({
+      where: { troquel_id: troquelId },
     });
 
-    if (ordersCount > 0) {
-      return res.status(400).json({
-        status: "error",
-        message:
-          "No se puede desactivar el troquel porque tiene ordenes activas asociadas",
+    if (productsCount > 0) {
+      // SOFT DELETE: se conserva el registro (histórico de órdenes/productos).
+      // El índice único parcial libera el código para reutilizarlo.
+      const troquel = await prisma.troqueles.update({
+        where: { id: troquelId },
+        data: { deleted_at: new Date(), is_active: false },
+      });
+      return res.status(200).json({
+        status: "success",
+        message: "Troquel eliminado (se conserva por tener productos asociados)",
+        data: troquel,
       });
     }
 
-    const troquel = await prisma.troqueles.update({
-      where: { id: troquelId },
-      data: { is_active: false },
+    // Sin productos: chequeo defensivo de órdenes que lo referencien directo
+    // (no debería ocurrir, pero evita romper la FK con un borrado físico).
+    const ordersCount = await prisma.header_Production_Order.count({
+      where: { troquel_id: troquelId },
     });
+
+    if (ordersCount > 0) {
+      const troquel = await prisma.troqueles.update({
+        where: { id: troquelId },
+        data: { deleted_at: new Date(), is_active: false },
+      });
+      return res.status(200).json({
+        status: "success",
+        message: "Troquel eliminado (se conserva por tener órdenes asociadas)",
+        data: troquel,
+      });
+    }
+
+    // HARD DELETE: sin productos ni órdenes. Se borran primero las imágenes
+    // (objetos en R2 + filas) porque su FK es RESTRICT, y luego el troquel.
+    const images = await prisma.troquel_Image.findMany({
+      where: { troquel_id: troquelId },
+      select: { storage_key: true },
+    });
+    await Promise.allSettled(images.map((img) => deleteObject(img.storage_key)));
+    await prisma.troquel_Image.deleteMany({ where: { troquel_id: troquelId } });
+    await prisma.troqueles.delete({ where: { id: troquelId } });
 
     res.status(200).json({
       status: "success",
-      message: "Troquel desactivado exitosamente",
-      data: troquel,
+      message: "Troquel eliminado permanentemente",
     });
   } catch (error) {
     console.error(error);
