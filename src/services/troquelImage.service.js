@@ -16,6 +16,7 @@ const SIZE_FOLDER = {
   SMALL: "S",
   MEDIUM: "M",
   LARGE: "L",
+  EXTERNAL: "E",
 };
 
 const buildKey = (troquelId, sizeFolder, mime) =>

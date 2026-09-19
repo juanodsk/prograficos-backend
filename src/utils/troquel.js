@@ -2,6 +2,7 @@ const troquelSizeMap = {
   S: "SMALL",
   M: "MEDIUM",
   L: "LARGE",
+  E: "EXTERNAL",
 };
 
 const parseTroquelSearchTerm = (rawSearch) => {
@@ -18,7 +19,7 @@ const parseTroquelSearchTerm = (rawSearch) => {
     };
   }
 
-  const sizeOnlyMatch = search.match(/^([sml])$/i);
+  const sizeOnlyMatch = search.match(/^([smle])$/i);
 
   if (sizeOnlyMatch) {
     return {
@@ -27,7 +28,7 @@ const parseTroquelSearchTerm = (rawSearch) => {
     };
   }
 
-  const match = search.match(/^([sml])\s*(.+)$/i);
+  const match = search.match(/^([smle])\s*(.+)$/i);
 
   if (!match) {
     return null;
