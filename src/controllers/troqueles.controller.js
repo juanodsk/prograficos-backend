@@ -211,9 +211,13 @@ const getTroqueles = async (req, res) => {
       fallbackSortBy: "elaboration_date",
       fallbackSortDirection: "desc",
     });
+    const sizeFilter = knownSizes.includes(req.query?.size)
+      ? req.query.size
+      : null;
     const where = {
       ...buildActiveWhere(req.query, buildTroquelSearchWhere(req.query?.search)),
       deleted_at: null, // los borrados (soft delete) no aparecen en la lista
+      ...(sizeFilter ? { size: sizeFilter } : {}),
     };
     const total = await prisma.troqueles.count({ where });
     const meta = buildPaginationMeta(requestedPage, pageSize, total);
