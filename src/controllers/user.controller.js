@@ -1,5 +1,12 @@
 import { prisma } from "../config/db.js";
 import bcrypt from "bcryptjs";
+import { HttpError } from "../utils/httpError.js";
+import {
+  uploadUserAvatar,
+  removeUserAvatar,
+  attachAvatarUrl,
+  attachAvatarUrls,
+} from "../services/userAvatar.service.js";
 import {
   buildInsensitiveContains,
   buildPaginationMeta,
@@ -72,6 +79,7 @@ const getUsers = async (req, res) => {
         avatar: true,
         is_active: true,
         operates_machinery: true,
+        avatar_key: true,
         createdAt: true,
       },
       orderBy: userSortMap[sortBy](sortDirection),
@@ -81,7 +89,7 @@ const getUsers = async (req, res) => {
 
     res.json({
       status: "success",
-      data: users,
+      data: await attachAvatarUrls(users),
       meta,
     });
   } catch (error) {
@@ -142,13 +150,14 @@ const createUser = async (req, res) => {
         avatar: true,
         is_active: true,
         operates_machinery: true,
+        avatar_key: true,
       },
     });
 
     res.status(201).json({
       status: "success",
       message: "Usuario creado exitosamente",
-      data: { user },
+      data: { user: await attachAvatarUrl(user) },
     });
   } catch (error) {
     console.error(error);
@@ -173,6 +182,7 @@ const getUserById = async (req, res) => {
         avatar: true,
         is_active: true,
         operates_machinery: true,
+        avatar_key: true,
       },
     });
 
@@ -182,7 +192,7 @@ const getUserById = async (req, res) => {
 
     res.status(200).json({
       status: "success",
-      data: { user },
+      data: { user: await attachAvatarUrl(user) },
     });
   } catch (error) {
     res.status(500).json({ message: "Error al obtener el usuario" });
@@ -262,6 +272,7 @@ const updateUser = async (req, res) => {
         avatar: true,
         is_active: true,
         operates_machinery: true,
+        avatar_key: true,
         createdAt: true,
       },
     });
@@ -269,7 +280,7 @@ const updateUser = async (req, res) => {
     res.status(200).json({
       status: "success",
       message: "Usuario actualizado exitosamente",
-      data: { user },
+      data: { user: await attachAvatarUrl(user) },
     });
   } catch (error) {
     console.error(error);
@@ -348,6 +359,66 @@ const getOperators = async (_req, res) => {
   }
 };
 
+// Sube/reemplaza el avatar del usuario (imagen ya recortada y ≤1MB del front).
+const uploadAvatar = async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id, 10);
+    if (Number.isNaN(userId)) {
+      return res
+        .status(400)
+        .json({ status: "error", message: "El id del usuario no es válido" });
+    }
+
+    const result = await uploadUserAvatar(userId, req.file);
+
+    res.status(200).json({
+      status: "success",
+      message: "Avatar actualizado exitosamente",
+      data: result,
+    });
+  } catch (error) {
+    if (error instanceof HttpError) {
+      return res
+        .status(error.status)
+        .json({ status: "error", message: error.message });
+    }
+    console.error(error);
+    res
+      .status(500)
+      .json({ status: "error", message: "Error al actualizar el avatar" });
+  }
+};
+
+// Quita la foto de perfil del usuario (la borra de R2).
+const removeAvatar = async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id, 10);
+    if (Number.isNaN(userId)) {
+      return res
+        .status(400)
+        .json({ status: "error", message: "El id del usuario no es válido" });
+    }
+
+    const result = await removeUserAvatar(userId);
+
+    res.status(200).json({
+      status: "success",
+      message: "Foto de perfil eliminada",
+      data: result,
+    });
+  } catch (error) {
+    if (error instanceof HttpError) {
+      return res
+        .status(error.status)
+        .json({ status: "error", message: error.message });
+    }
+    console.error(error);
+    res
+      .status(500)
+      .json({ status: "error", message: "Error al eliminar la foto" });
+  }
+};
+
 export {
   getUsers,
   getOperators,
@@ -355,4 +426,6 @@ export {
   getUserById,
   updateUser,
   deleteUser,
+  uploadAvatar,
+  removeAvatar,
 };

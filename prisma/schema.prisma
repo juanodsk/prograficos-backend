@@ -107,6 +107,7 @@ model User {
   password  String
   role      Role     @default(USER)
   avatar    String?  @default("https://img.freepik.com/vector-premium/icono-perfil-avatar-predeterminado-imagen-usuario-redes-sociales-icono-avatar-gris-silueta-perfil-blanco-ilustracion-vectorial_561158-3383.jpg")
+  avatar_key String? // key del avatar en R2 (carpeta usuarios/); la URL se firma al leer
 
   is_active Boolean  @default(true)
   operates_machinery Boolean @default(false)
