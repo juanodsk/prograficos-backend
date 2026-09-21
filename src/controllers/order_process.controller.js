@@ -113,7 +113,8 @@ const getOrderedOrderDetails = async (db, headerOrderId) =>
     orderBy: [{ process: { order: "asc" } }, { id: "asc" }],
   });
 
-const getBlockingPreviousProcess = (orderedDetails, detailId) => {
+// Proceso inmediatamente anterior (por orden), o null si es el primero.
+const getImmediatePreviousDetail = (orderedDetails, detailId) => {
   const currentIndex = orderedDetails.findIndex(
     (detail) => detail.id === detailId,
   );
@@ -122,11 +123,7 @@ const getBlockingPreviousProcess = (orderedDetails, detailId) => {
     return null;
   }
 
-  return (
-    orderedDetails
-      .slice(0, currentIndex)
-      .find((detail) => detail.process_state !== "TERMINADO") || null
-  );
+  return orderedDetails[currentIndex - 1];
 };
 
 const updateHeaderOrderStatus = async (tx, headerOrderId) => {
@@ -332,15 +329,14 @@ const startOrderProcess = async (req, res) => {
       detail.header_order_id,
     );
 
-    const blockingPreviousProcess = getBlockingPreviousProcess(
-      orderedDetails,
-      detailId,
-    );
+    // Opción A: se puede ADELANTAR el proceso siguiente. Solo se bloquea el
+    // inicio si el proceso inmediatamente anterior aún NO ha comenzado.
+    const previousDetail = getImmediatePreviousDetail(orderedDetails, detailId);
 
-    if (blockingPreviousProcess) {
+    if (previousDetail && previousDetail.process_state === "PENDIENTE") {
       return res.status(400).json({
         status: "error",
-        message: `No puedes iniciar este proceso hasta terminar ${blockingPreviousProcess.process?.name || "el proceso anterior"}`,
+        message: `No puedes iniciar este proceso hasta que ${previousDetail.process?.name || "el proceso anterior"} haya comenzado`,
       });
     }
 
@@ -530,6 +526,7 @@ const finishOrderProcess = async (req, res) => {
       quantity_delivered,
       quantity_damaged,
       observations,
+      end_observations,
       machinery_id,
       measure_cutting_id,
       field_values,
@@ -596,6 +593,22 @@ const finishOrderProcess = async (req, res) => {
       });
     }
 
+    // Opción A: aunque se pueda adelantar el inicio, NO se puede FINALIZAR este
+    // proceso hasta que el inmediatamente anterior esté TERMINADO (así la
+    // cantidad recibida ya está definida y la cadena de cantidades es íntegra).
+    const orderedDetails = await getOrderedOrderDetails(
+      prisma,
+      detail.header_order_id,
+    );
+    const previousDetail = getImmediatePreviousDetail(orderedDetails, detailId);
+
+    if (previousDetail && previousDetail.process_state !== "TERMINADO") {
+      return res.status(400).json({
+        status: "error",
+        message: `No puedes finalizar este proceso hasta terminar ${previousDetail.process?.name || "el proceso anterior"}`,
+      });
+    }
+
     const hasInputDataChanges =
       machinery_id != null ||
       measure_cutting_id != null ||
@@ -622,8 +635,10 @@ const finishOrderProcess = async (req, res) => {
           end_hour: now,
           process_state: "TERMINADO",
           // No se sobrescribe user_id: se conserva el operario elegido al iniciar.
+          // No se toca `observations`: esa es la nota del inicio y se conserva.
           quantity_delivered: Number(quantity_delivered),
           quantity_damaged: Number(quantity_damaged),
+          end_observations: end_observations?.trim() ? end_observations : null,
         },
         include: orderProcessReadInclude,
       });
