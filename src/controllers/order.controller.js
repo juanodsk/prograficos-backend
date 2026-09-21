@@ -761,6 +761,24 @@ const createOrder = async (req, res) => {
   }
 };
 
+// Columnas ordenables del listado de órdenes (Estado y Acciones no se ordenan).
+const orderSortMap = {
+  id: (dir) => [{ id: dir }],
+  product: (dir) => [{ product: { name: dir } }],
+  third: (dir) => [{ product: { third: { company_name: dir } } }],
+  date: (dir) => [{ date: dir }],
+  amount_sheets: (dir) => [{ amount_sheets: dir }],
+  total_estimated: (dir) => [{ total_estimated: dir }],
+  total_delivered: (dir) => [{ total_delivered: dir }],
+  total_damaged: (dir) => [{ total_damaged: dir }],
+};
+
+const resolveOrderSort = (query) => {
+  const sortBy = orderSortMap[query?.sortBy] ? query.sortBy : "date";
+  const sortDirection = query?.sortDirection === "asc" ? "asc" : "desc";
+  return orderSortMap[sortBy](sortDirection);
+};
+
 const getOrders = async (req, res) => {
   try {
     const { page: requestedPage, pageSize } = parsePagination(req.query);
@@ -820,7 +838,7 @@ const getOrders = async (req, res) => {
     const orders = await prisma.header_Production_Order.findMany({
       where: listWhere,
       select: orderListSelect,
-      orderBy: { date: "desc" },
+      orderBy: resolveOrderSort(req.query),
       skip: (meta.page - 1) * meta.pageSize,
       take: meta.pageSize,
     });

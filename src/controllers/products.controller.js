@@ -111,6 +111,15 @@ const buildProductCustomerWhere = (rawCustomer) => {
   };
 };
 
+// Filtro exacto por cliente (para el dropdown del datatable).
+const buildProductThirdWhere = (rawThirdId) => {
+  const thirdId = Number(rawThirdId);
+  if (!Number.isInteger(thirdId) || thirdId <= 0) {
+    return {};
+  }
+  return { third_id: thirdId };
+};
+
 const productSortMap = {
   id: (direction) => [{ id: direction }],
   name: (direction) => [{ name: direction }],
@@ -247,6 +256,7 @@ const getProducts = async (req, res) => {
     const filters = [
       buildProductSearchWhere(req.query?.search),
       buildProductCustomerWhere(req.query?.customer),
+      buildProductThirdWhere(req.query?.third_id),
     ].filter((filter) => Object.keys(filter).length > 0);
     const where = buildActiveWhere(
       req.query,
@@ -352,4 +362,30 @@ const deleteProduct = async (req, res) => {
   }
 };
 
-export { createProduct, getProduct, getProducts, updateProduct, deleteProduct };
+// Clientes (terceros) activos que tienen al menos un producto. Fuente de verdad
+// para el dropdown de filtro por cliente: distintos (una fila por tercero).
+const getProductClients = async (_req, res) => {
+  try {
+    const clients = await prisma.thirds.findMany({
+      where: { is_active: true, products: { some: {} } },
+      select: { id: true, name: true, company_name: true },
+      orderBy: [{ company_name: "asc" }, { name: "asc" }],
+    });
+    res.status(200).json({ status: "success", data: clients });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      status: "error",
+      message: "Error al obtener los clientes",
+    });
+  }
+};
+
+export {
+  createProduct,
+  getProduct,
+  getProducts,
+  getProductClients,
+  updateProduct,
+  deleteProduct,
+};

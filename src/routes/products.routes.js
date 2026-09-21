@@ -5,6 +5,7 @@ import {
   createProduct,
   getProduct,
   getProducts,
+  getProductClients,
   updateProduct,
   deleteProduct,
 } from "../controllers/products.controller.js";
@@ -15,6 +16,12 @@ router.post(
   verifyToken,
   authorizeRoles("ADMIN", "SUPERVISOR"),
   createProduct,
+);
+router.get(
+  "/customers",
+  verifyToken,
+  authorizeRoles("ADMIN", "SUPERVISOR", "OPERATOR", "USER"),
+  getProductClients,
 );
 router.get(
   "/:id",
