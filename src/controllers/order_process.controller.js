@@ -526,6 +526,7 @@ const finishOrderProcess = async (req, res) => {
       quantity_delivered,
       quantity_damaged,
       observations,
+      end_observations,
       machinery_id,
       measure_cutting_id,
       field_values,
@@ -634,8 +635,10 @@ const finishOrderProcess = async (req, res) => {
           end_hour: now,
           process_state: "TERMINADO",
           // No se sobrescribe user_id: se conserva el operario elegido al iniciar.
+          // No se toca `observations`: esa es la nota del inicio y se conserva.
           quantity_delivered: Number(quantity_delivered),
           quantity_damaged: Number(quantity_damaged),
+          end_observations: end_observations?.trim() ? end_observations : null,
         },
         include: orderProcessReadInclude,
       });
