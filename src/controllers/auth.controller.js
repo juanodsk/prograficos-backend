@@ -1,6 +1,10 @@
 import { prisma } from "../config/db.js";
 import bcrypt from "bcryptjs";
 import { generateToken, resolveTokenCookieOptions } from "../utils/generateToken.js";
+import {
+  buildUserAvatarUrl,
+  attachAvatarUrl,
+} from "../services/userAvatar.service.js";
 
 const register = async (req, res) => {
   const { name, surename, email, password } = req.body;
@@ -40,6 +44,7 @@ const register = async (req, res) => {
         surename: user.surename,
         email: user.email,
         avatar: user.avatar,
+        avatar_url: await buildUserAvatarUrl(user.avatar_key),
         role: user.role,
       },
       token,
@@ -81,6 +86,7 @@ const login = async (req, res) => {
         surename: user.surename,
         email: user.email,
         avatar: user.avatar,
+        avatar_url: await buildUserAvatarUrl(user.avatar_key),
         role: user.role,
       },
       token,
@@ -112,6 +118,7 @@ const profile = async (req, res) => {
         email: true,
         role: true,
         avatar: true,
+        avatar_key: true,
         is_active: true,
       },
     });
@@ -125,7 +132,7 @@ const profile = async (req, res) => {
 
     res.status(200).json({
       status: "success",
-      data: { user },
+      data: { user: await attachAvatarUrl(user) },
     });
   } catch (error) {
     res.status(500).json({ message: "Error al obtener el perfil" });

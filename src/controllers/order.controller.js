@@ -1,5 +1,6 @@
 import { prisma } from "../config/db.js";
 import { emitProductionChange } from "../utils/realtime.js";
+import { buildUserAvatarUrl } from "../services/userAvatar.service.js";
 import { parseTroquelSearchTerm } from "../utils/troquel.js";
 import { syncDynamicFieldValues } from "../utils/syncDynamicFieldValues.js";
 
@@ -49,6 +50,7 @@ const orderInclude = {
           id: true,
           name: true,
           surename: true,
+          avatar_key: true,
         },
       },
     },
@@ -920,9 +922,33 @@ const getBoardOrders = async (req, res) => {
       }),
     ]);
 
+    // Adjunta la URL firmada del avatar del operario y el total esperado real
+    // (base + unidades extra de los pliegos adicionales).
+    const boardOrders = await Promise.all(
+      orders.map(async (order) => ({
+        ...order,
+        total_expected:
+          (order.total_estimated ?? 0) +
+          (order.measure?.format?.sheet_divisions ?? 1) *
+            (order.cavities ?? 1) *
+            (order.amount_sheets_additional ?? 0),
+        detail_production_orders: await Promise.all(
+          (order.detail_production_orders || []).map(async (detail) => ({
+            ...detail,
+            user: detail.user
+              ? {
+                  ...detail.user,
+                  avatar_url: await buildUserAvatarUrl(detail.user.avatar_key),
+                }
+              : detail.user,
+          })),
+        ),
+      })),
+    );
+
     res.status(200).json({
       status: "success",
-      data: orders,
+      data: boardOrders,
       meta,
       summary: {
         totalOrders: total,

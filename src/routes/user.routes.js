@@ -6,9 +6,12 @@ import {
   getUserById,
   updateUser,
   deleteUser,
+  uploadAvatar,
+  removeAvatar,
 } from "../controllers/user.controller.js";
 import { authorizeRoles } from "../middlewares/role.middleware.js";
 import { verifyToken } from "../middlewares/auth.middleware.js";
+import { uploadUserAvatar } from "../config/upload.js";
 
 const router = express.Router();
 
@@ -36,6 +39,19 @@ router.delete(
   verifyToken,
   authorizeRoles("ADMIN", "SUPERVISOR"),
   deleteUser,
+);
+router.post(
+  "/:id/avatar",
+  verifyToken,
+  authorizeRoles("ADMIN", "SUPERVISOR"),
+  uploadUserAvatar,
+  uploadAvatar,
+);
+router.delete(
+  "/:id/avatar",
+  verifyToken,
+  authorizeRoles("ADMIN", "SUPERVISOR"),
+  removeAvatar,
 );
 router.get(
   "/:id",
