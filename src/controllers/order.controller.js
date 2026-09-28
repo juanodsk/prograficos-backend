@@ -45,6 +45,16 @@ const orderInclude = {
           format: true,
         },
       },
+      field_values: {
+        include: {
+          field_definition: true,
+        },
+        orderBy: {
+          field_definition: {
+            sort_order: "asc",
+          },
+        },
+      },
       user: {
         select: {
           id: true,
@@ -71,6 +81,7 @@ const orderListSelect = {
   amount_sheets_additional: true,
   total_estimated: true,
   total_delivered: true,
+  total_real_delivered: true,
   total_damaged: true,
   product: {
     select: {
@@ -717,6 +728,11 @@ const createOrder = async (req, res) => {
           calculatedQuantities.amount_sheets_additional,
         cavities: calculatedQuantities.cavities,
         total_estimated: calculatedQuantities.total_estimated,
+        // Esperado por cálculos: total + (unidades por pliego × pliegos adicionales).
+        total_expected:
+          calculatedQuantities.total_estimated +
+          calculatedQuantities.units_per_sheet *
+            calculatedQuantities.amount_sheets_additional,
         measure_id: Number(measure_id),
         paper_type_id: Number(paper_type_id),
         troquel_id: Number(troquel_id),
@@ -772,6 +788,7 @@ const orderSortMap = {
   amount_sheets: (dir) => [{ amount_sheets: dir }],
   total_estimated: (dir) => [{ total_estimated: dir }],
   total_delivered: (dir) => [{ total_delivered: dir }],
+  total_real_delivered: (dir) => [{ total_real_delivered: dir }],
   total_damaged: (dir) => [{ total_damaged: dir }],
 };
 
@@ -1163,6 +1180,12 @@ const updateOrder = async (req, res) => {
             calculatedQuantities.amount_sheets_additional,
           cavities: calculatedQuantities.cavities,
           total_estimated: calculatedQuantities.total_estimated,
+          // Esperado por cálculos: se recalcula mientras la orden aún se puede
+          // editar (queda fijo al iniciar el primer proceso).
+          total_expected:
+            calculatedQuantities.total_estimated +
+            calculatedQuantities.units_per_sheet *
+              calculatedQuantities.amount_sheets_additional,
           measure_id: Number(measure_id),
           paper_type_id: Number(paper_type_id),
           troquel_id: Number(troquel_id),

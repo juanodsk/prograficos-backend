@@ -174,6 +174,11 @@ const updateHeaderOrderStatus = async (tx, headerOrderId) => {
       order_status: nextStatus,
       total_damaged: totalDamaged,
       total_delivered: lastCompletedDetail?.quantity_delivered ?? null,
+      // Real entregado al cliente: se congela solo cuando TODOS los procesos
+      // terminan (output final de la orden). Antes queda null.
+      total_real_delivered: allFinished
+        ? (lastCompletedDetail?.quantity_delivered ?? null)
+        : null,
     },
   });
 };
@@ -523,6 +528,7 @@ const finishOrderProcess = async (req, res) => {
     }
 
     const {
+      quantity_received,
       quantity_delivered,
       quantity_damaged,
       observations,
@@ -532,19 +538,38 @@ const finishOrderProcess = async (req, res) => {
       field_values,
     } = req.body;
 
-    if (quantity_delivered == null || Number(quantity_delivered) < 0) {
-      return res.status(400).json({
-        status: "error",
-        message: "La cantidad entregada es obligatoria y no puede ser negativa",
-      });
-    }
-
     if (quantity_damaged == null || Number(quantity_damaged) < 0) {
       return res.status(400).json({
         status: "error",
         message: "La cantidad dañada es obligatoria y no puede ser negativa",
       });
     }
+
+    // La cantidad recibida es la base del cálculo (puede venir corregida por el
+    // operario). Si no llega, se reconstruye desde el entregado por compatibilidad.
+    const receivedValue =
+      quantity_received != null
+        ? Number(quantity_received)
+        : quantity_delivered != null
+          ? Number(quantity_delivered) + Number(quantity_damaged)
+          : null;
+
+    if (receivedValue == null || Number.isNaN(receivedValue) || receivedValue < 0) {
+      return res.status(400).json({
+        status: "error",
+        message: "La cantidad recibida es obligatoria y no puede ser negativa",
+      });
+    }
+
+    if (Number(quantity_damaged) > receivedValue) {
+      return res.status(400).json({
+        status: "error",
+        message: "La cantidad dañada no puede ser mayor que la recibida",
+      });
+    }
+
+    // Entregado = recibido - dañado. Es lo que recibe el proceso siguiente.
+    const deliveredValue = receivedValue - Number(quantity_damaged);
 
     const detail = await prisma.detail_Production_Order.findUnique({
       where: { id: detailId },
@@ -636,7 +661,8 @@ const finishOrderProcess = async (req, res) => {
           process_state: "TERMINADO",
           // No se sobrescribe user_id: se conserva el operario elegido al iniciar.
           // No se toca `observations`: esa es la nota del inicio y se conserva.
-          quantity_delivered: Number(quantity_delivered),
+          quantity_received: receivedValue,
+          quantity_delivered: deliveredValue,
           quantity_damaged: Number(quantity_damaged),
           end_observations: end_observations?.trim() ? end_observations : null,
         },

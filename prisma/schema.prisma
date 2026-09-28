@@ -377,7 +377,9 @@ model Header_Production_Order {
   amount_sheets_additional Int @default(0)
   cavities               Int @default(1)
   total_estimated        Int
+  total_expected         Int?
   total_delivered        Int?
+  total_real_delivered   Int?
   total_damaged          Int?
 
   measure_id          Int
@@ -412,6 +414,7 @@ model Detail_Production_Order {
 
   process_state Process_State @default(PENDIENTE)
 
+  quantity_received  Int?
   quantity_delivered Int
   quantity_damaged   Int
 
