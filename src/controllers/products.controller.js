@@ -25,6 +25,7 @@ const productInclude = {
       type_person: true,
       document_number: true,
       email: true,
+      prefix: true,
     },
   },
 };
@@ -136,8 +137,17 @@ const normalizeSalePrice = (value) => {
   return Number(value);
 };
 
+// Código = prefijo del cliente + número. Se normaliza a mayúsculas alfanuméricas.
+const normalizeProductCode = (value) => {
+  const normalized = String(value ?? "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+  return normalized || null;
+};
+
 const normalizeProductPayload = (body, currentIsActive = true) => ({
   name: body?.name?.trim() ? body.name.trim() : null,
+  code: normalizeProductCode(body?.code),
   troquel_id: body?.troquel_id != null ? Number(body.troquel_id) : NaN,
   third_id: body?.third_id != null ? Number(body.third_id) : NaN,
   sale_price: normalizeSalePrice(body?.sale_price),
@@ -180,6 +190,35 @@ const validateProductPayload = async (payload, currentProductId = null) => {
 
   if (!third) {
     return "El tercero seleccionado no existe o está inactivo";
+  }
+
+  // El código es opcional. Si viene, debe ser prefijo del cliente + número
+  // entero positivo, y único por cliente.
+  if (payload.code) {
+    if (!third.prefix) {
+      return "El cliente no tiene prefijo configurado para asignar un código";
+    }
+    if (payload.code.length > 7) {
+      return "El código del producto supera la longitud permitida";
+    }
+    if (!payload.code.startsWith(third.prefix)) {
+      return "El código debe iniciar con el prefijo del cliente";
+    }
+    const numberPart = payload.code.slice(third.prefix.length);
+    if (!/^[1-9]\d*$/.test(numberPart)) {
+      return "El código debe ser el prefijo seguido de un número entero positivo";
+    }
+    const duplicateCode = await prisma.product.findFirst({
+      where: {
+        third_id: payload.third_id,
+        code: payload.code,
+        ...(currentProductId != null ? { id: { not: currentProductId } } : {}),
+      },
+      select: { id: true },
+    });
+    if (duplicateCode) {
+      return "El código del producto ya existe, debe ser único por cliente";
+    }
   }
 
   return null;
@@ -362,6 +401,42 @@ const deleteProduct = async (req, res) => {
   }
 };
 
+// Verifica si un código ya existe para un cliente (para validación en blur).
+const checkProductCode = async (req, res) => {
+  try {
+    const thirdId = Number(req.query.third_id);
+    const code = normalizeProductCode(req.query.code);
+    const excludeId = req.query.excludeId ? Number(req.query.excludeId) : null;
+
+    if (!Number.isInteger(thirdId) || thirdId <= 0 || !code) {
+      return res.status(400).json({
+        status: "error",
+        message: "Parámetros inválidos para verificar el código",
+      });
+    }
+
+    const existing = await prisma.product.findFirst({
+      where: {
+        third_id: thirdId,
+        code,
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+      select: { id: true },
+    });
+
+    res.status(200).json({
+      status: "success",
+      data: { exists: Boolean(existing) },
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      status: "error",
+      message: "Error al verificar el código del producto",
+    });
+  }
+};
+
 // Clientes (terceros) activos que tienen al menos un producto. Fuente de verdad
 // para el dropdown de filtro por cliente: distintos (una fila por tercero).
 const getProductClients = async (_req, res) => {
@@ -386,6 +461,7 @@ export {
   getProduct,
   getProducts,
   getProductClients,
+  checkProductCode,
   updateProduct,
   deleteProduct,
 };

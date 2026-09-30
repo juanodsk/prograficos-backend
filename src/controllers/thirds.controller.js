@@ -99,17 +99,31 @@ const thirdSortMap = {
   is_active: (direction) => [{ is_active: direction }, { name: "asc" }],
 };
 
-const normalizeThirdPayload = (body, fallbackIsActive = true) => ({
-  name: body?.name?.trim(),
-  email: body?.email?.trim() || null,
-  address: body?.address?.trim(),
-  type_person: body?.type_person,
-  person_type: body?.person_type,
-  document_type: body?.document_type,
-  document_number: body?.document_number?.trim(),
-  company_name: body?.company_name?.trim() || null,
-  is_active: normalizeIsActive(body?.is_active, fallbackIsActive),
-});
+// Prefijo: mayúsculas, solo alfanumérico, máximo 4 caracteres.
+const sanitizePrefix = (value) =>
+  String(value ?? "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 4);
+
+const normalizeThirdPayload = (body, fallbackIsActive = true) => {
+  const isCliente = body?.type_person === "CLIENTE";
+  // El prefijo solo aplica a clientes; para otros tipos se limpia a null.
+  const prefix = isCliente ? sanitizePrefix(body?.prefix) || null : null;
+
+  return {
+    name: body?.name?.trim(),
+    email: body?.email?.trim() || null,
+    address: body?.address?.trim(),
+    type_person: body?.type_person,
+    person_type: body?.person_type,
+    document_type: body?.document_type,
+    document_number: body?.document_number?.trim(),
+    company_name: body?.company_name?.trim() || null,
+    prefix,
+    is_active: normalizeIsActive(body?.is_active, fallbackIsActive),
+  };
+};
 
 const validateThirdPayload = async (payload, currentId = null) => {
   if (!payload.name) {
@@ -142,6 +156,25 @@ const validateThirdPayload = async (payload, currentId = null) => {
 
   if (!payload.document_number) {
     return "El número de documento es obligatorio";
+  }
+
+  if (payload.type_person === "CLIENTE") {
+    if (!payload.prefix) {
+      return "El prefijo es obligatorio para clientes";
+    }
+    if (!/^[A-Z0-9]{1,4}$/.test(payload.prefix)) {
+      return "El prefijo debe ser alfanumérico en mayúsculas de máximo 4 caracteres";
+    }
+    const duplicatePrefix = await prisma.thirds.findFirst({
+      where: {
+        prefix: payload.prefix,
+        ...(currentId != null ? { id: { not: currentId } } : {}),
+      },
+      select: { id: true },
+    });
+    if (duplicatePrefix) {
+      return "Ya existe un cliente con ese prefijo";
+    }
   }
 
   const duplicateEmail = await prisma.thirds.findFirst({
