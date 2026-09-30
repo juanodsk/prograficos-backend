@@ -6,6 +6,7 @@ import {
   getProduct,
   getProducts,
   getProductClients,
+  checkProductCode,
   updateProduct,
   deleteProduct,
 } from "../controllers/products.controller.js";
@@ -22,6 +23,12 @@ router.get(
   verifyToken,
   authorizeRoles("ADMIN", "SUPERVISOR", "OPERATOR", "USER"),
   getProductClients,
+);
+router.get(
+  "/check-code",
+  verifyToken,
+  authorizeRoles("ADMIN", "SUPERVISOR"),
+  checkProductCode,
 );
 router.get(
   "/:id",

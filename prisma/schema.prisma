@@ -275,6 +275,9 @@ model Thirds {
   document_number String?
   company_name String?
 
+  // Prefijo único del cliente para codificar sus productos (ej: GRN -> GRN1).
+  prefix String? @unique @db.VarChar(4)
+
   is_active Boolean @default(true)
 
   products Product[]
@@ -304,6 +307,8 @@ model PaperTypeSupplier {
 model Product {
   id         Int @id @default(autoincrement())
   name       String?
+  // Código del producto = prefijo del cliente + número (ej: GRN1). Único por cliente.
+  code       String?  @db.VarChar(7)
   troquel_id Int
   third_id   Int
   sale_price Decimal? @db.Decimal(12, 2)
@@ -315,6 +320,7 @@ model Product {
 
   header_production_orders Header_Production_Order[]
 
+  @@unique([third_id, code])
   @@map("products")
 }
 
@@ -326,6 +332,7 @@ model Troqueles {
   id               Int      @id @default(autoincrement())
   elaboration_date DateTime @default(now())
   code             String?
+  description      String?
   size             Size
   createdAt        DateTime @default(now())
   updatedAt        DateTime  @default(now())
