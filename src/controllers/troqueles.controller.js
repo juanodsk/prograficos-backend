@@ -114,6 +114,7 @@ const buildTroquelSearchWhere = (rawSearch) => {
 const troquelSortMap = {
   id: (direction) => [{ id: direction }],
   code: (direction) => [{ code: direction }],
+  description: (direction) => [{ description: direction }, { id: "asc" }],
   size: (direction) => [{ size: direction }],
   elaboration_date: (direction) => [{ elaboration_date: direction }],
   is_active: (direction) => [{ is_active: direction }, { id: "asc" }],
@@ -123,6 +124,7 @@ const troquelListSelect = {
   id: true,
   elaboration_date: true,
   code: true,
+  description: true,
   size: true,
   createdAt: true,
   updatedAt: true,
@@ -137,7 +139,7 @@ const troquelListSelect = {
 // ───────────── CREAR TROQUEL ─────────────
 const createTroqueles = async (req, res) => {
   try {
-    const { code, elaboration_date, size, is_active } = req.body;
+    const { code, description, elaboration_date, size, is_active } = req.body;
     const normalizedCode = code?.trim();
     const codeError = validateTroquelCode(normalizedCode);
 
@@ -170,6 +172,7 @@ const createTroqueles = async (req, res) => {
     const troquel = await prisma.troqueles.create({
       data: {
         code: normalizedCode,
+        description: description?.trim() || null,
         elaboration_date: elaboration_date
           ? new Date(elaboration_date)
           : new Date(),
@@ -292,7 +295,7 @@ const getTroquelesById = async (req, res) => {
 const updateTroqueles = async (req, res) => {
   try {
     const troquelId = parseTroquelId(req.params.id);
-    const { code, elaboration_date, size, is_active } = req.body;
+    const { code, description, elaboration_date, size, is_active } = req.body;
     const normalizedCode = code?.trim();
     const codeError = validateTroquelCode(normalizedCode);
 
@@ -345,6 +348,7 @@ const updateTroqueles = async (req, res) => {
 
     const dataToUpdate = {
       code: normalizedCode,
+      description: description?.trim() || null,
       elaboration_date: elaboration_date
         ? new Date(elaboration_date)
         : troquelExists.elaboration_date,

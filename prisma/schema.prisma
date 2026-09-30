@@ -332,6 +332,7 @@ model Troqueles {
   id               Int      @id @default(autoincrement())
   elaboration_date DateTime @default(now())
   code             String?
+  description      String?
   size             Size
   createdAt        DateTime @default(now())
   updatedAt        DateTime  @default(now())
