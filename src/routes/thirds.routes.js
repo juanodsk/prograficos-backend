@@ -1,6 +1,10 @@
 import express from "express";
 import { verifyToken } from "../middlewares/auth.middleware.js";
-import { authorizeRoles } from "../middlewares/role.middleware.js";
+import {
+  requirePermission,
+  requireAnyPermission,
+} from "../middlewares/role.middleware.js";
+import { THIRDS_READ_KEYS } from "../constants/permissions.js";
 import {
   createThirds,
   getThirds,
@@ -10,30 +14,11 @@ import {
 } from "../controllers/thirds.controller.js";
 const router = express.Router();
 
-router.post(
-  "/",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
-  createThirds,
-);
-router.get("/", verifyToken, authorizeRoles("ADMIN", "SUPERVISOR"), getThirds);
-router.get(
-  "/:id",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
-  getThirdsById,
-);
-router.put(
-  "/:id",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
-  updateThirds,
-);
-router.delete(
-  "/:id",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
-  deleteThirds,
-);
+// Lectura: módulo o flujo de órdenes · Escritura: thirds:create/update/delete (ADMIN bypass).
+router.post("/", verifyToken, requirePermission("thirds:create"), createThirds);
+router.get("/", verifyToken, requireAnyPermission(...THIRDS_READ_KEYS), getThirds);
+router.get("/:id", verifyToken, requireAnyPermission(...THIRDS_READ_KEYS), getThirdsById);
+router.put("/:id", verifyToken, requirePermission("thirds:update"), updateThirds);
+router.delete("/:id", verifyToken, requirePermission("thirds:delete"), deleteThirds);
 
 export default router;

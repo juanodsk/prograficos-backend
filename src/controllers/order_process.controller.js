@@ -24,7 +24,7 @@ const orderProcessBaseInclude = {
       name: true,
       surename: true,
       email: true,
-      role: true,
+      role: { select: { name: true } },
     },
   },
   header_order: {

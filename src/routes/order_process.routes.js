@@ -1,6 +1,10 @@
 import express from "express";
 import { verifyToken } from "../middlewares/auth.middleware.js";
-import { authorizeRoles } from "../middlewares/role.middleware.js";
+import {
+  requirePermission,
+  requireAnyPermission,
+} from "../middlewares/role.middleware.js";
+import { ORDER_READ_KEYS } from "../constants/permissions.js";
 import {
   finishOrderProcess,
   getOrderProcessById,
@@ -10,18 +14,23 @@ import {
 
 const router = express.Router();
 
-router.get("/order/:orderId", verifyToken, getOrderProcesses);
-router.get("/:id", verifyToken, getOrderProcessById);
+router.get(
+  "/order/:orderId",
+  verifyToken,
+  requireAnyPermission(...ORDER_READ_KEYS),
+  getOrderProcesses,
+);
+router.get("/:id", verifyToken, requireAnyPermission(...ORDER_READ_KEYS), getOrderProcessById);
 router.patch(
   "/:id/start",
   verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR", "OPERATOR", "USER"),
+  requirePermission("orders:operate"),
   startOrderProcess,
 );
 router.patch(
   "/:id/finish",
   verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR", "OPERATOR", "USER"),
+  requirePermission("orders:operate"),
   finishOrderProcess,
 );
 

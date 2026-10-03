@@ -1,6 +1,6 @@
 // src/middlewares/auth.middleware.js
 import jwt from "jsonwebtoken";
-import { prisma } from "../config/db.js";
+import { getUserWithPermissions } from "../services/security.service.js";
 
 export const verifyToken = async (req, res, next) => {
   try {
@@ -15,18 +15,9 @@ export const verifyToken = async (req, res, next) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
-      select: {
-        id: true,
-        name: true,
-        surename: true,
-        email: true,
-        role: true,
-        avatar: true,
-        is_active: true,
-      },
-    });
+    // Se resuelven rol + permisos (claims) en cada request desde la BD:
+    // así un cambio de permisos de un rol aplica de inmediato, sin re-login.
+    const user = await getUserWithPermissions(decoded.id);
 
     if (!user) {
       return res.status(401).json({ message: "Usuario no encontrado" });

@@ -1,6 +1,10 @@
 import express from "express";
 import { verifyToken } from "../middlewares/auth.middleware.js";
-import { authorizeRoles } from "../middlewares/role.middleware.js";
+import {
+  requirePermission,
+  requireAnyPermission,
+} from "../middlewares/role.middleware.js";
+import { CATALOG_READ_KEYS } from "../constants/permissions.js";
 import {
   createProcess,
   getProcesses,
@@ -13,47 +17,23 @@ import {
 
 const router = express.Router();
 
-router.post(
-  "/",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
-  createProcess,
-);
-router.get(
-  "/",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
-  getProcesses,
-);
+// Lectura: cualquiera del flujo de catálogos/órdenes · Escritura: catalogs:manage (ADMIN bypass).
+router.post("/", verifyToken, requirePermission("catalogs:manage"), createProcess);
+router.get("/", verifyToken, requireAnyPermission(...CATALOG_READ_KEYS), getProcesses);
 router.get(
   "/validate-field-key",
   verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
+  requirePermission("catalogs:manage"),
   validateProcessFieldKey,
 );
 router.patch(
   "/reorder",
   verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
+  requirePermission("catalogs:manage"),
   reorderProcesses,
 );
-router.get(
-  "/:id",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
-  getProcessById,
-);
-router.put(
-  "/:id",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
-  updateProcess,
-);
-router.delete(
-  "/:id",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
-  deleteProcess,
-);
+router.get("/:id", verifyToken, requireAnyPermission(...CATALOG_READ_KEYS), getProcessById);
+router.put("/:id", verifyToken, requirePermission("catalogs:manage"), updateProcess);
+router.delete("/:id", verifyToken, requirePermission("catalogs:manage"), deleteProcess);
 
 export default router;

@@ -1,6 +1,10 @@
 import express from "express";
 import { verifyToken } from "../middlewares/auth.middleware.js";
-import { authorizeRoles } from "../middlewares/role.middleware.js";
+import {
+  requirePermission,
+  requireAnyPermission,
+} from "../middlewares/role.middleware.js";
+import { PRODUCTS_READ_KEYS } from "../constants/permissions.js";
 import {
   createProduct,
   getProduct,
@@ -12,46 +16,24 @@ import {
 } from "../controllers/products.controller.js";
 
 const router = express.Router();
-router.post(
-  "/",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
-  createProduct,
-);
+
+// Lectura: módulo o flujo de órdenes · Escritura: products:create/update/delete (ADMIN bypass).
+router.post("/", verifyToken, requirePermission("products:create"), createProduct);
 router.get(
   "/customers",
   verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR", "OPERATOR", "USER"),
+  requireAnyPermission(...PRODUCTS_READ_KEYS),
   getProductClients,
 );
 router.get(
   "/check-code",
   verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
+  requireAnyPermission("products:create", "products:update"),
   checkProductCode,
 );
-router.get(
-  "/:id",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR", "OPERATOR", "USER"),
-  getProduct,
-);
-router.get(
-  "/",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR", "OPERATOR", "USER"),
-  getProducts,
-);
-router.put(
-  "/:id",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
-  updateProduct,
-);
-router.delete(
-  "/:id",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
-  deleteProduct,
-);
+router.get("/:id", verifyToken, requireAnyPermission(...PRODUCTS_READ_KEYS), getProduct);
+router.get("/", verifyToken, requireAnyPermission(...PRODUCTS_READ_KEYS), getProducts);
+router.put("/:id", verifyToken, requirePermission("products:update"), updateProduct);
+router.delete("/:id", verifyToken, requirePermission("products:delete"), deleteProduct);
+
 export default router;

@@ -134,7 +134,7 @@ const auditOrderInclude = {
       name: true,
       surename: true,
       email: true,
-      role: true,
+      role: { select: { name: true } },
     },
   },
   detail_production_orders: {
@@ -162,7 +162,7 @@ const auditOrderInclude = {
           name: true,
           surename: true,
           email: true,
-          role: true,
+          role: { select: { name: true } },
         },
       },
     },

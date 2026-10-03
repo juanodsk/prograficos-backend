@@ -3,11 +3,13 @@ import http from "http";
 import morgan from "morgan";
 import { config } from "dotenv";
 import { connectDB, disconnectDB } from "./config/db.js";
+import { syncSecurity } from "./bootstrap/syncSecurity.js";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 
 import userRoutes from "./routes/user.routes.js";
 import authRoutes from "./routes/auth.routes.js";
+import roleRoutes from "./routes/role.routes.js";
 import measureRoutes from "./routes/measures.routes.js";
 import formatRoutes from "./routes/formats.routes.js";
 import thirdsRoutes from "./routes/thirds.routes.js";
@@ -104,6 +106,7 @@ app.get("/health", (_req, res) => {
 
 app.use("/users", userRoutes);
 app.use("/auth", authRoutes);
+app.use("/roles", roleRoutes);
 app.use("/measures", measureRoutes);
 app.use("/formats", formatRoutes);
 app.use("/thirds", thirdsRoutes);
@@ -114,6 +117,14 @@ app.use("/processes", processesRoutes);
 app.use("/machinery", machineryRoutes);
 app.use("/order", orderRoutes);
 app.use("/order-processes", orderProcessRoutes);
+
+// Sincroniza roles/permisos del sistema (idempotente) antes de escuchar.
+try {
+  await syncSecurity();
+  console.log("Seguridad sincronizada (roles y permisos) ✅");
+} catch (error) {
+  console.error("Error al sincronizar la seguridad:", error?.message || error);
+}
 
 server.listen(port, () => {
   console.log(`Server running on port ${port} 🚀`);

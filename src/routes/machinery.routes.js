@@ -1,7 +1,11 @@
 import express from "express";
 import { verifyToken } from "../middlewares/auth.middleware.js";
 
-import { authorizeRoles } from "../middlewares/role.middleware.js";
+import {
+  requirePermission,
+  requireAnyPermission,
+} from "../middlewares/role.middleware.js";
+import { CATALOG_READ_KEYS } from "../constants/permissions.js";
 import {
   createMachinery,
   validateMachineryReference,
@@ -13,41 +17,17 @@ import {
 
 const router = express.Router();
 
-router.post(
-  "/",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
-  createMachinery,
-);
-router.get(
-  "/",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR", "OPERATOR", "USER"),
-  getMachinery,
-);
+// Lectura: cualquiera del flujo de catálogos/órdenes · Escritura: catalogs:manage (ADMIN bypass).
+router.post("/", verifyToken, requirePermission("catalogs:manage"), createMachinery);
+router.get("/", verifyToken, requireAnyPermission(...CATALOG_READ_KEYS), getMachinery);
 router.get(
   "/validate-reference",
   verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
+  requirePermission("catalogs:manage"),
   validateMachineryReference,
 );
-router.get(
-  "/:id",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR", "OPERATOR", "USER"),
-  getMachineryById,
-);
-router.put(
-  "/:id",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
-  updateMachinery,
-);
-router.delete(
-  "/:id",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
-  deleteMachinery,
-);
+router.get("/:id", verifyToken, requireAnyPermission(...CATALOG_READ_KEYS), getMachineryById);
+router.put("/:id", verifyToken, requirePermission("catalogs:manage"), updateMachinery);
+router.delete("/:id", verifyToken, requirePermission("catalogs:manage"), deleteMachinery);
 
 export default router;

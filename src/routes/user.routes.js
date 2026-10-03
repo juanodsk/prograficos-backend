@@ -6,58 +6,38 @@ import {
   getUserById,
   updateUser,
   deleteUser,
+  checkUsername,
   uploadAvatar,
   removeAvatar,
 } from "../controllers/user.controller.js";
-import { authorizeRoles } from "../middlewares/role.middleware.js";
+import { authorizeRoles, requireAdmin } from "../middlewares/role.middleware.js";
 import { verifyToken } from "../middlewares/auth.middleware.js";
 import { uploadUserAvatar } from "../config/upload.js";
 
 const router = express.Router();
 
-router.get("/", verifyToken, authorizeRoles("ADMIN", "SUPERVISOR"), getUsers);
+// Lista de operarios: operativa (la usan ADMIN y SUPERVISOR al crear órdenes).
 router.get(
   "/operators",
   verifyToken,
   authorizeRoles("ADMIN", "SUPERVISOR"),
   getOperators,
 );
-router.post(
-  "/create",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
-  createUser,
-);
-router.put(
-  "/update/:id",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
-  updateUser,
-);
-router.delete(
-  "/delete/:id",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
-  deleteUser,
-);
+
+// Gestión de usuarios = zona de Seguridad: solo ADMIN.
+router.get("/", verifyToken, requireAdmin, getUsers);
+router.get("/check-username", verifyToken, requireAdmin, checkUsername);
+router.post("/create", verifyToken, requireAdmin, createUser);
+router.put("/update/:id", verifyToken, requireAdmin, updateUser);
+router.delete("/delete/:id", verifyToken, requireAdmin, deleteUser);
 router.post(
   "/:id/avatar",
   verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
+  requireAdmin,
   uploadUserAvatar,
   uploadAvatar,
 );
-router.delete(
-  "/:id/avatar",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
-  removeAvatar,
-);
-router.get(
-  "/:id",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
-  getUserById,
-);
+router.delete("/:id/avatar", verifyToken, requireAdmin, removeAvatar);
+router.get("/:id", verifyToken, requireAdmin, getUserById);
 
 export default router;
