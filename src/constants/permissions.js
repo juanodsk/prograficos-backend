@@ -36,6 +36,7 @@ export const PERMISSIONS = [
   { key: "troqueles:create", module: "Troqueles", label: "Crear troqueles" },
   { key: "troqueles:update", module: "Troqueles", label: "Editar troqueles" },
   { key: "troqueles:delete", module: "Troqueles", label: "Eliminar troqueles" },
+  { key: "troqueles:download", module: "Troqueles", label: "Descargar imágenes de troqueles" },
 
   // Catálogos (medidas, formatos, papel, procesos, maquinaria)
   { key: "catalogs:view", module: "Catálogos", label: "Ver catálogos" },
@@ -60,6 +61,7 @@ export const DEFAULT_ROLE_PERMISSIONS = {
     "thirds:view", "thirds:create", "thirds:update", "thirds:delete",
     "products:view", "products:create", "products:update", "products:delete",
     "troqueles:view", "troqueles:create", "troqueles:update", "troqueles:delete",
+    "troqueles:download",
     "catalogs:view", "catalogs:manage",
     "orders:view", "orders:create", "orders:update", "orders:delete",
     "orders:operate", "orders:finish", "monitor:view", "audit:view",
