@@ -10,6 +10,7 @@ import {
   getOrderProcessById,
   getOrderProcesses,
   startOrderProcess,
+  editOrderProcess,
 } from "../controllers/order_process.controller.js";
 
 const router = express.Router();
@@ -32,6 +33,12 @@ router.patch(
   verifyToken,
   requirePermission("orders:operate"),
   finishOrderProcess,
+);
+router.patch(
+  "/:id/edit",
+  verifyToken,
+  requirePermission("orders:edit_processes"),
+  editOrderProcess,
 );
 
 export default router;
