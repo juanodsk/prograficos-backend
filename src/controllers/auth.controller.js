@@ -1,95 +1,57 @@
 import { prisma } from "../config/db.js";
 import bcrypt from "bcryptjs";
-import { generateToken, resolveTokenCookieOptions } from "../utils/generateToken.js";
 import {
-  buildUserAvatarUrl,
-  attachAvatarUrl,
-} from "../services/userAvatar.service.js";
-
-const register = async (req, res) => {
-  const { name, surename, email, password } = req.body;
-
-  //CHECK IF USER ALREADY EXISTS//
-  const userExists = await prisma.user.findUnique({
-    where: { email: email },
-  });
-
-  if (userExists) {
-    return res
-      .status(400)
-      .json({ message: "Usuario ya existe con este email" });
-  }
-
-  //HASH PASSWORD//
-  const salt = await bcrypt.genSalt(10);
-  const hashedPassword = await bcrypt.hash(password, salt);
-
-  //CREATE USER//
-  const user = await prisma.user.create({
-    data: {
-      name,
-      surename,
-      email,
-      password: hashedPassword,
-    },
-  });
-  //GENERATE JWT TOKEN//
-  const token = generateToken(user.id, res);
-  res.status(201).json({
-    status: "success",
-    data: {
-      user: {
-        id: user.id,
-        name: user.name,
-        surename: user.surename,
-        email: user.email,
-        avatar: user.avatar,
-        avatar_url: await buildUserAvatarUrl(user.avatar_key),
-        role: user.role,
-      },
-      token,
-    },
-  });
-};
+  generateToken,
+  resolveTokenCookieOptions,
+} from "../utils/generateToken.js";
+import { buildUserAvatarUrl } from "../services/userAvatar.service.js";
+import { getUserWithPermissions } from "../services/security.service.js";
 
 const login = async (req, res) => {
-  const { email, password } = req.body;
+  const { username, password } = req.body;
 
-  //CHECK IF USER EXISTS//
+  if (!username || !password) {
+    return res
+      .status(400)
+      .json({ message: "Usuario y contraseña son obligatorios" });
+  }
+
+  // El inicio de sesión es por username (no por email).
   const user = await prisma.user.findUnique({
-    where: { email: email },
+    where: { username: String(username).trim().toLowerCase() },
   });
 
   if (!user) {
-    return res.status(401).json({ message: "Email o contraseña incorrectos" });
+    return res
+      .status(401)
+      .json({ message: "Usuario o contraseña incorrectos" });
   }
 
   if (!user.is_active) {
-    return res.status(401).json({ message: "Tu usuario está inactivo" });
+    return res
+      .status(403)
+      .json({ message: "No puedes iniciar sesión, el usuario está inactivo" });
   }
 
-  //VERIFY PASSWORD//
   const isPasswordValid = await bcrypt.compare(password, user.password);
   if (!isPasswordValid) {
-    return res.status(401).json({ message: "Email o contraseña incorrectos" });
+    return res
+      .status(401)
+      .json({ message: "Usuario o contraseña incorrectos" });
   }
 
-  //GENERATE JWT TOKEN//
-  const token = generateToken(user.id, res);
+  generateToken(user.id, res);
+
+  // Devolvemos el usuario con rol + permisos (claims) resueltos.
+  const authUser = await getUserWithPermissions(user.id);
 
   res.status(200).json({
     status: "success",
     data: {
       user: {
-        id: user.id,
-        name: user.name,
-        surename: user.surename,
-        email: user.email,
-        avatar: user.avatar,
+        ...authUser,
         avatar_url: await buildUserAvatarUrl(user.avatar_key),
-        role: user.role,
       },
-      token,
     },
   });
 };
@@ -107,36 +69,28 @@ const logout = async (req, res) => {
 
 const profile = async (req, res) => {
   try {
-    const user = await prisma.user.findUnique({
-      where: {
-        id: req.user.id,
-      },
-      select: {
-        id: true,
-        name: true,
-        surename: true,
-        email: true,
-        role: true,
-        avatar: true,
-        avatar_key: true,
-        is_active: true,
-      },
-    });
-    if (!user) {
+    // req.user ya viene resuelto (rol + permisos) desde verifyToken.
+    const authUser = await getUserWithPermissions(req.user.id);
+
+    if (!authUser) {
       return res.status(404).json({ message: "Usuario no encontrado" });
     }
-
-    if (!user.is_active) {
+    if (!authUser.is_active) {
       return res.status(401).json({ message: "Usuario inactivo" });
     }
 
     res.status(200).json({
       status: "success",
-      data: { user: await attachAvatarUrl(user) },
+      data: {
+        user: {
+          ...authUser,
+          avatar_url: await buildUserAvatarUrl(authUser.avatar_key),
+        },
+      },
     });
   } catch (error) {
     res.status(500).json({ message: "Error al obtener el perfil" });
   }
 };
 
-export { register, login, logout, profile };
+export { login, logout, profile };

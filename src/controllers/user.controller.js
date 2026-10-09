@@ -14,7 +14,43 @@ import {
   parseSort,
 } from "../utils/pagination.js";
 
-const knownRoles = ["ADMIN", "SUPERVISOR", "OPERATOR", "USER"];
+// Selección estándar del usuario con su rol (relación).
+const userSelect = {
+  id: true,
+  name: true,
+  surename: true,
+  username: true,
+  email: true,
+  role: { select: { id: true, name: true, label: true } },
+  avatar: true,
+  is_active: true,
+  operates_machinery: true,
+  avatar_key: true,
+  createdAt: true,
+};
+
+// Aplana el rol a string (nombre) para no romper la UI actual de usuarios.
+const flattenRole = (user) =>
+  user
+    ? {
+        ...user,
+        role: user.role?.name ?? null,
+        role_label: user.role?.label ?? null,
+        role_id: user.role?.id ?? null,
+      }
+    : user;
+
+// username: minúsculas, sin espacios, solo [a-z0-9._-].
+const normalizeUsername = (value) =>
+  String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[^a-z0-9._-]/g, "");
+
+// Resuelve un rol por nombre (debe existir y estar activo).
+const resolveRole = (roleName) =>
+  prisma.role.findFirst({ where: { name: roleName, is_active: true } });
 
 const buildUserSearchWhere = (rawSearch) => {
   const search = rawSearch?.trim();
@@ -24,22 +60,18 @@ const buildUserSearchWhere = (rawSearch) => {
   }
 
   const numericSearch = Number.parseInt(search, 10);
-  const matchedRoles = knownRoles.filter((role) =>
-    role.toLowerCase().includes(search.toLowerCase()),
-  );
 
   const or = [
     { name: buildInsensitiveContains(search) },
     { surename: buildInsensitiveContains(search) },
+    { username: buildInsensitiveContains(search) },
     { email: buildInsensitiveContains(search) },
+    { role: { is: { name: buildInsensitiveContains(search) } } },
+    { role: { is: { label: buildInsensitiveContains(search) } } },
   ];
 
   if (!Number.isNaN(numericSearch)) {
     or.push({ id: numericSearch });
-  }
-
-  if (matchedRoles.length > 0) {
-    or.push({ role: { in: matchedRoles } });
   }
 
   return { OR: or };
@@ -47,8 +79,9 @@ const buildUserSearchWhere = (rawSearch) => {
 
 const userSortMap = {
   name: (direction) => [{ name: direction }, { surename: direction }],
+  username: (direction) => [{ username: direction }],
   email: (direction) => [{ email: direction }],
-  role: (direction) => [{ role: direction }, { name: "asc" }],
+  role: (direction) => [{ role: { name: direction } }, { name: "asc" }],
   is_active: (direction) => [
     { is_active: direction },
     { name: "asc" },
@@ -70,18 +103,7 @@ const getUsers = async (req, res) => {
 
     const users = await prisma.user.findMany({
       where,
-      select: {
-        id: true,
-        name: true,
-        surename: true,
-        email: true,
-        role: true,
-        avatar: true,
-        is_active: true,
-        operates_machinery: true,
-        avatar_key: true,
-        createdAt: true,
-      },
+      select: userSelect,
       orderBy: userSortMap[sortBy](sortDirection),
       skip: (meta.page - 1) * meta.pageSize,
       take: meta.pageSize,
@@ -89,7 +111,7 @@ const getUsers = async (req, res) => {
 
     res.json({
       status: "success",
-      data: await attachAvatarUrls(users),
+      data: await attachAvatarUrls(users.map(flattenRole)),
       meta,
     });
   } catch (error) {
@@ -101,6 +123,12 @@ const createUser = async (req, res) => {
   try {
     const { name, surename, email, password, role, avatar, is_active, operates_machinery } =
       req.body;
+    const username = normalizeUsername(req.body?.username);
+
+    // El rol es obligatorio (sin default).
+    if (!role) {
+      return res.status(400).json({ message: "El rol es obligatorio" });
+    }
 
     // Solo ADMIN puede crear usuarios ADMIN
     if (role === "ADMIN" && req.user.role !== "ADMIN") {
@@ -109,9 +137,25 @@ const createUser = async (req, res) => {
       });
     }
 
-    const validRoles = ["ADMIN", "SUPERVISOR", "OPERATOR", "USER"];
-    if (role && !validRoles.includes(role)) {
+    const roleRecord = await resolveRole(role);
+    if (!roleRecord) {
       return res.status(400).json({ message: "Rol inválido" });
+    }
+
+    if (!username || username.length < 6) {
+      return res.status(400).json({
+        message: "El username es obligatorio (mínimo 6 caracteres, sin espacios)",
+      });
+    }
+
+    const usernameExists = await prisma.user.findUnique({
+      where: { username },
+      select: { id: true },
+    });
+    if (usernameExists) {
+      return res
+        .status(400)
+        .json({ message: "Ya existe un usuario con ese username" });
     }
 
     const userExists = await prisma.user.findUnique({
@@ -134,30 +178,21 @@ const createUser = async (req, res) => {
       data: {
         name,
         surename,
+        username,
         email,
         password: hashedPassword,
-        role: role || "USER",
+        role_id: roleRecord.id,
         is_active: is_active !== undefined ? Boolean(is_active) : true,
         operates_machinery: Boolean(operates_machinery),
         ...(avatar && { avatar }),
       },
-      select: {
-        id: true,
-        name: true,
-        surename: true,
-        email: true,
-        role: true,
-        avatar: true,
-        is_active: true,
-        operates_machinery: true,
-        avatar_key: true,
-      },
+      select: userSelect,
     });
 
     res.status(201).json({
       status: "success",
       message: "Usuario creado exitosamente",
-      data: { user: await attachAvatarUrl(user) },
+      data: { user: await attachAvatarUrl(flattenRole(user)) },
     });
   } catch (error) {
     console.error(error);
@@ -173,17 +208,7 @@ const getUserById = async (req, res) => {
       where: {
         id: parseInt(id),
       },
-      select: {
-        id: true,
-        name: true,
-        surename: true,
-        email: true,
-        role: true,
-        avatar: true,
-        is_active: true,
-        operates_machinery: true,
-        avatar_key: true,
-      },
+      select: userSelect,
     });
 
     if (!user) {
@@ -192,7 +217,7 @@ const getUserById = async (req, res) => {
 
     res.status(200).json({
       status: "success",
-      data: { user: await attachAvatarUrl(user) },
+      data: { user: await attachAvatarUrl(flattenRole(user)) },
     });
   } catch (error) {
     res.status(500).json({ message: "Error al obtener el usuario" });
@@ -206,9 +231,8 @@ const updateUser = async (req, res) => {
       req.body;
 
     const userExists = await prisma.user.findUnique({
-      where: {
-        id: parseInt(id),
-      },
+      where: { id: parseInt(id) },
+      include: { role: { select: { name: true } } },
     });
 
     if (!userExists) {
@@ -216,22 +240,23 @@ const updateUser = async (req, res) => {
     }
 
     // Solo ADMIN puede editar ADMIN
-    if (userExists.role === "ADMIN" && req.user.role !== "ADMIN") {
+    if (userExists.role?.name === "ADMIN" && req.user.role !== "ADMIN") {
       return res.status(403).json({
         message: "Solo un administrador puede editar usuarios ADMIN",
       });
     }
 
-    // Validación cambio de rol
+    // Validación y resolución de cambio de rol
+    let roleId;
     if (role) {
-      const rolesPermitidosSupervisor = ["OPERATOR", "USER", "SUPERVISOR"];
+      const rolesPermitidosSupervisor = ["OPERATOR", "SUPERVISOR"];
 
       if (
         req.user.role === "SUPERVISOR" &&
         !rolesPermitidosSupervisor.includes(role)
       ) {
         return res.status(403).json({
-          message: "Un supervisor solo puede asignar roles OPERATOR o USER",
+          message: "Un supervisor solo puede asignar roles OPERATOR o SUPERVISOR",
         });
       }
 
@@ -240,10 +265,35 @@ const updateUser = async (req, res) => {
           message: "No tienes permisos para cambiar roles",
         });
       }
+
+      const roleRecord = await resolveRole(role);
+      if (!roleRecord) {
+        return res.status(400).json({ message: "Rol inválido" });
+      }
+      roleId = roleRecord.id;
+    }
+
+    // username opcional: si llega, se sanea y valida unicidad
+    let username;
+    if (req.body?.username !== undefined) {
+      username = normalizeUsername(req.body.username);
+      if (!username || username.length < 6) {
+        return res.status(400).json({
+          message: "El username debe tener al menos 6 caracteres y sin espacios",
+        });
+      }
+      const taken = await prisma.user.findFirst({
+        where: { username, id: { not: parseInt(id) } },
+        select: { id: true },
+      });
+      if (taken) {
+        return res
+          .status(400)
+          .json({ message: "Ya existe un usuario con ese username" });
+      }
     }
 
     let hashedPassword;
-
     if (password) {
       const salt = await bcrypt.genSalt(10);
       hashedPassword = await bcrypt.hash(password, salt);
@@ -254,33 +304,23 @@ const updateUser = async (req, res) => {
       data: {
         ...(name && { name }),
         ...(surename && { surename }),
+        ...(username && { username }),
         ...(email && { email }),
         ...(password && { password: hashedPassword }),
-        ...(role && { role }),
+        ...(roleId && { role_id: roleId }),
         ...(avatar && { avatar }),
         ...(is_active !== undefined && { is_active: Boolean(is_active) }),
         ...(operates_machinery !== undefined && {
           operates_machinery: Boolean(operates_machinery),
         }),
       },
-      select: {
-        id: true,
-        name: true,
-        surename: true,
-        email: true,
-        role: true,
-        avatar: true,
-        is_active: true,
-        operates_machinery: true,
-        avatar_key: true,
-        createdAt: true,
-      },
+      select: userSelect,
     });
 
     res.status(200).json({
       status: "success",
       message: "Usuario actualizado exitosamente",
-      data: { user: await attachAvatarUrl(user) },
+      data: { user: await attachAvatarUrl(flattenRole(user)) },
     });
   } catch (error) {
     console.error(error);
@@ -301,6 +341,7 @@ const deleteUser = async (req, res) => {
 
     const userExists = await prisma.user.findUnique({
       where: { id: parseInt(id) },
+      include: { role: { select: { name: true } } },
     });
 
     if (!userExists) {
@@ -309,7 +350,7 @@ const deleteUser = async (req, res) => {
 
     // Solo ADMIN puede eliminar ADMIN o SUPERVISOR
     if (
-      ["ADMIN", "SUPERVISOR"].includes(userExists.role) &&
+      ["ADMIN", "SUPERVISOR"].includes(userExists.role?.name) &&
       req.user.role !== "ADMIN"
     ) {
       return res.status(403).json({
@@ -332,6 +373,38 @@ const deleteUser = async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Error al eliminar el usuario" });
+  }
+};
+
+// Verifica si un username ya está en uso (para validación en blur del form).
+const checkUsername = async (req, res) => {
+  try {
+    const username = normalizeUsername(req.query?.username);
+    const excludeId = req.query?.excludeId ? Number(req.query.excludeId) : null;
+
+    if (!username) {
+      return res
+        .status(400)
+        .json({ status: "error", message: "username requerido" });
+    }
+
+    const existing = await prisma.user.findFirst({
+      where: {
+        username,
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+      select: { id: true },
+    });
+
+    res.status(200).json({
+      status: "success",
+      data: { exists: Boolean(existing) },
+    });
+  } catch (error) {
+    console.error(error);
+    res
+      .status(500)
+      .json({ status: "error", message: "Error al verificar el username" });
   }
 };
 
@@ -426,6 +499,7 @@ export {
   getUserById,
   updateUser,
   deleteUser,
+  checkUsername,
   uploadAvatar,
   removeAvatar,
 };

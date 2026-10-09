@@ -1,6 +1,7 @@
 import { prisma } from "../config/db.js";
 import { emitProductionChange } from "../utils/realtime.js";
 import { syncDynamicFieldValues } from "../utils/syncDynamicFieldValues.js";
+import { HttpError } from "../utils/httpError.js";
 
 const orderProcessBaseInclude = {
   process: {
@@ -24,7 +25,7 @@ const orderProcessBaseInclude = {
       name: true,
       surename: true,
       email: true,
-      role: true,
+      role: { select: { name: true } },
     },
   },
   header_order: {
@@ -695,9 +696,248 @@ const finishOrderProcess = async (req, res) => {
   }
 };
 
+// ───────────── RECÁLCULO EN CASCADA (reutilizable) ─────────────
+// Tras corregir un proceso, re-deriva las cantidades de los procesos POSTERIORES
+// ya ejecutados: recibida(N) = entregada(N-1); entregada(N) = recibida(N) - dañada(N).
+// La dañada de cada proceso se conserva (es un hecho físico). Los procesos
+// anteriores y el proceso editado no se tocan (su recibida/dañada son la entrada).
+// Si a un posterior le quedara dañada > recibida, aborta (HttpError 400) sin
+// guardar nada. Al final refresca los totales del encabezado.
+const cascadeRecalcFrom = async (tx, headerOrderId, startDetailId) => {
+  const ordered = await tx.detail_Production_Order.findMany({
+    where: { header_order_id: headerOrderId },
+    select: {
+      id: true,
+      quantity_received: true,
+      quantity_delivered: true,
+      quantity_damaged: true,
+      process: { select: { name: true, order: true } },
+    },
+    orderBy: [{ process: { order: "asc" } }, { id: "asc" }],
+  });
+
+  const startIndex = ordered.findIndex((d) => d.id === startDetailId);
+  if (startIndex !== -1) {
+    let prevDelivered = ordered[startIndex].quantity_delivered;
+
+    for (let i = startIndex + 1; i < ordered.length; i += 1) {
+      const d = ordered[i];
+      // Solo cascada sobre procesos ya ejecutados (tienen recibida registrada).
+      if (d.quantity_received == null) break;
+
+      const damaged = d.quantity_damaged || 0;
+      const newReceived = prevDelivered ?? 0;
+
+      if (damaged > newReceived) {
+        throw new HttpError(
+          400,
+          `La corrección deja el proceso "${d.process?.name || `#${d.id}`}" con dañadas (${damaged}) mayores que las recibidas (${newReceived}). Ajusta también ese proceso antes de guardar.`,
+        );
+      }
+
+      const newDelivered = newReceived - damaged;
+      await tx.detail_Production_Order.update({
+        where: { id: d.id },
+        data: { quantity_received: newReceived, quantity_delivered: newDelivered },
+      });
+      prevDelivered = newDelivered;
+    }
+  }
+
+  await updateHeaderOrderStatus(tx, headerOrderId);
+};
+
+// ───────────── EDITAR / CORREGIR UN PROCESO TERMINADO ─────────────
+// Permite corregir errores humanos sobre un proceso ya TERMINADO: operario,
+// maquinaria, observaciones y cantidades (recibida/dañada). Recalcula en cascada
+// los procesos posteriores y el encabezado. Gateado por orders:edit_processes.
+const editOrderProcess = async (req, res) => {
+  try {
+    const detailId = parseId(req.params.id);
+    if (Number.isNaN(detailId)) {
+      return res
+        .status(400)
+        .json({ status: "error", message: "El id del proceso no es válido" });
+    }
+
+    const {
+      operator_user_id,
+      machinery_id,
+      observations,
+      end_observations,
+      quantity_received,
+      quantity_damaged,
+    } = req.body;
+
+    const detail = await prisma.detail_Production_Order.findUnique({
+      where: { id: detailId },
+      include: {
+        process: { include: { machineries: true } },
+        header_order: { select: { id: true, is_active: true } },
+      },
+    });
+
+    if (!detail) {
+      return res
+        .status(404)
+        .json({ status: "error", message: "Proceso de la orden no encontrado" });
+    }
+    if (!detail.header_order?.is_active) {
+      return res
+        .status(400)
+        .json({ status: "error", message: "La orden de este proceso está inactiva" });
+    }
+    if (detail.process_state !== "TERMINADO") {
+      return res.status(400).json({
+        status: "error",
+        message: "Solo puedes editar un proceso que ya esté terminado",
+      });
+    }
+
+    // Maquinaria (requerida): la nueva o la que ya tenía.
+    const requestedMachineryId =
+      machinery_id != null && machinery_id !== ""
+        ? Number(machinery_id)
+        : detail.machinery_id;
+    if (requestedMachineryId == null || Number.isNaN(requestedMachineryId)) {
+      return res.status(400).json({
+        status: "error",
+        message: "Debes seleccionar una maquinaria válida",
+      });
+    }
+    const machinery = await prisma.machinery.findFirst({
+      where: { id: requestedMachineryId, is_active: true },
+    });
+    if (!machinery) {
+      return res.status(400).json({
+        status: "error",
+        message: "La maquinaria seleccionada no existe o está inactiva",
+      });
+    }
+
+    // Operario (requerido): el nuevo o el que ya tenía. Debe estar asignado a la
+    // maquinaria resultante y estar activo.
+    const resolvedOperatorId =
+      operator_user_id != null && operator_user_id !== ""
+        ? Number(operator_user_id)
+        : detail.user_id;
+    if (resolvedOperatorId == null || Number.isNaN(resolvedOperatorId)) {
+      return res.status(400).json({
+        status: "error",
+        message: "Debes seleccionar un operario válido",
+      });
+    }
+    const operatorLink = await prisma.machineryOperator.findFirst({
+      where: {
+        machinery_id: requestedMachineryId,
+        user_id: resolvedOperatorId,
+        user: { is_active: true, operates_machinery: true },
+      },
+    });
+    if (!operatorLink) {
+      return res.status(400).json({
+        status: "error",
+        message:
+          "El operario seleccionado no está asignado a esa maquinaria o está inactivo",
+      });
+    }
+
+    // Cantidades: la nueva o la que ya tenía. entregada = recibida - dañada.
+    const received =
+      quantity_received != null && quantity_received !== ""
+        ? Number(quantity_received)
+        : detail.quantity_received;
+    const damaged =
+      quantity_damaged != null && quantity_damaged !== ""
+        ? Number(quantity_damaged)
+        : detail.quantity_damaged;
+
+    if (received == null || Number.isNaN(received) || received < 0) {
+      return res.status(400).json({
+        status: "error",
+        message: "La cantidad recibida es obligatoria y no puede ser negativa",
+      });
+    }
+    if (damaged == null || Number.isNaN(damaged) || damaged < 0) {
+      return res.status(400).json({
+        status: "error",
+        message: "La cantidad dañada es obligatoria y no puede ser negativa",
+      });
+    }
+    if (damaged > received) {
+      return res.status(400).json({
+        status: "error",
+        message: "La cantidad dañada no puede ser mayor que la recibida",
+      });
+    }
+    const delivered = received - damaged;
+
+    // Bandera: el recálculo en cascada SOLO corre si cambian las cantidades.
+    // Si solo se corrigió operario/máquina/observaciones, no se toca la cadena
+    // ni el encabezado (evita trabajo y escrituras innecesarias).
+    const quantitiesChanged =
+      received !== detail.quantity_received ||
+      damaged !== detail.quantity_damaged;
+
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.detail_Production_Order.update({
+        where: { id: detailId },
+        data: {
+          user_id: resolvedOperatorId,
+          machinery_id: requestedMachineryId,
+          observations:
+            observations !== undefined
+              ? observations?.trim()
+                ? observations
+                : null
+              : detail.observations,
+          end_observations:
+            end_observations !== undefined
+              ? end_observations?.trim()
+                ? end_observations
+                : null
+              : detail.end_observations,
+          quantity_received: received,
+          quantity_delivered: delivered,
+          quantity_damaged: damaged,
+        },
+      });
+
+      // Recálculo solo si cambiaron las cantidades (recibida/dañada).
+      if (quantitiesChanged) {
+        await cascadeRecalcFrom(tx, detail.header_order_id, detailId);
+      }
+
+      return tx.detail_Production_Order.findUnique({
+        where: { id: detailId },
+        include: orderProcessReadInclude,
+      });
+    });
+
+    res.status(200).json({
+      status: "success",
+      message: "Proceso corregido exitosamente",
+      data: updated,
+    });
+    emitProductionChange(req, "process:edited", {
+      detailId,
+      orderId: detail.header_order_id,
+      processState: updated.process_state,
+      processName: updated.process?.name,
+    });
+  } catch (error) {
+    if (error instanceof HttpError) {
+      return res.status(error.status).json({ status: "error", message: error.message });
+    }
+    console.error(error);
+    res.status(500).json({ status: "error", message: "Error al corregir el proceso" });
+  }
+};
+
 export {
   finishOrderProcess,
   getOrderProcessById,
   getOrderProcesses,
   startOrderProcess,
+  editOrderProcess,
 };

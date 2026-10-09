@@ -105,6 +105,7 @@ const userSeeds = [
   {
     name: "Admin",
     surename: "Principal",
+    username: "admin",
     email: "admin@prograficos.com",
     password: "admin123",
     role: "ADMIN",
@@ -112,6 +113,7 @@ const userSeeds = [
   {
     name: "Carlos",
     surename: "Supervisor",
+    username: "supervisor",
     email: "supervisor@prograficos.com",
     password: "super123",
     role: "SUPERVISOR",
@@ -119,6 +121,7 @@ const userSeeds = [
   {
     name: "Luis",
     surename: "Operario",
+    username: "operario",
     email: "operario@prograficos.com",
     password: "operario123",
     role: "OPERATOR",
@@ -2326,17 +2329,29 @@ async function seedUsers() {
   const salt = await bcrypt.genSalt(10);
 
   for (const userSeed of userSeeds) {
+    const role = await prisma.role.findUnique({
+      where: { name: userSeed.role },
+    });
+    if (!role) {
+      console.warn(`⚠️ Rol ${userSeed.role} inexistente; se omite ${userSeed.email}`);
+      continue;
+    }
     await prisma.user.upsert({
       where: { email: userSeed.email },
       update: {
         name: userSeed.name,
         surename: userSeed.surename,
-        role: userSeed.role,
+        username: userSeed.username,
+        role_id: role.id,
         is_active: true,
       },
       create: {
-        ...userSeed,
+        name: userSeed.name,
+        surename: userSeed.surename,
+        username: userSeed.username,
+        email: userSeed.email,
         password: await bcrypt.hash(userSeed.password, salt),
+        role_id: role.id,
         is_active: true,
       },
     });
@@ -2359,20 +2374,30 @@ async function seedAdmin() {
 
   const name = process.env.ADMIN_NAME?.trim() || "Administrador";
   const surename = process.env.ADMIN_SURENAME?.trim() || "Prográficos";
+  const username =
+    process.env.ADMIN_USERNAME?.trim().toLowerCase() ||
+    email.split("@")[0].toLowerCase().replace(/[^a-z0-9._-]/g, "");
   const salt = await bcrypt.genSalt(10);
+
+  const adminRole = await prisma.role.findUnique({ where: { name: "ADMIN" } });
+  if (!adminRole) {
+    console.warn("⚠️ El rol ADMIN no existe aún. Corre migrate deploy primero.");
+    return;
+  }
 
   await prisma.user.upsert({
     where: { email },
     update: {
-      role: "ADMIN",
+      role_id: adminRole.id,
       is_active: true,
     },
     create: {
       name,
       surename,
+      username,
       email,
       password: await bcrypt.hash(password, salt),
-      role: "ADMIN",
+      role_id: adminRole.id,
       is_active: true,
     },
   });

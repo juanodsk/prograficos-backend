@@ -1,6 +1,10 @@
 import express from "express";
 import { verifyToken } from "../middlewares/auth.middleware.js";
-import { authorizeRoles } from "../middlewares/role.middleware.js";
+import {
+  requirePermission,
+  requireAnyPermission,
+} from "../middlewares/role.middleware.js";
+import { ORDER_READ_KEYS } from "../constants/permissions.js";
 import {
   createOrder,
   getOrders,
@@ -13,33 +17,13 @@ import {
 } from "../controllers/order.controller.js";
 const router = express.Router();
 
-router.post(
-  "/",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
-  createOrder,
-);
-router.get("/", verifyToken, getOrders);
-router.get("/board", verifyToken, getBoardOrders);
-router.get("/audit", verifyToken, getClosedOrdersAudit);
-router.get("/:id", verifyToken, getOrderById);
-router.put(
-  "/:id",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR", "OPERATOR"),
-  updateOrder,
-);
-router.delete(
-  "/:id",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
-  deleteOrder,
-);
-router.patch(
-  "/:id/finish",
-  verifyToken,
-  authorizeRoles("ADMIN", "SUPERVISOR"),
-  orderFinished,
-);
+router.post("/", verifyToken, requirePermission("orders:create"), createOrder);
+router.get("/", verifyToken, requireAnyPermission(...ORDER_READ_KEYS), getOrders);
+router.get("/board", verifyToken, requirePermission("monitor:view"), getBoardOrders);
+router.get("/audit", verifyToken, requirePermission("audit:view"), getClosedOrdersAudit);
+router.get("/:id", verifyToken, requireAnyPermission(...ORDER_READ_KEYS), getOrderById);
+router.put("/:id", verifyToken, requirePermission("orders:update"), updateOrder);
+router.delete("/:id", verifyToken, requirePermission("orders:delete"), deleteOrder);
+router.patch("/:id/finish", verifyToken, requirePermission("orders:finish"), orderFinished);
 
 export default router;
