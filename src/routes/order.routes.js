@@ -17,7 +17,12 @@ import {
 } from "../controllers/order.controller.js";
 const router = express.Router();
 
-router.post("/", verifyToken, requirePermission("orders:create"), createOrder);
+router.post(
+  "/",
+  verifyToken,
+  requireAnyPermission("orders:create", "orders:duplicate"),
+  createOrder,
+);
 router.get("/", verifyToken, requireAnyPermission(...ORDER_READ_KEYS), getOrders);
 router.get("/board", verifyToken, requirePermission("monitor:view"), getBoardOrders);
 router.get("/audit", verifyToken, requirePermission("audit:view"), getClosedOrdersAudit);
