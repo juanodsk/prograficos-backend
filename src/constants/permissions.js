@@ -50,6 +50,7 @@ export const PERMISSIONS = [
   { key: "orders:operate", module: "Órdenes", label: "Iniciar/finalizar procesos" },
   { key: "orders:finish", module: "Órdenes", label: "Terminar órdenes" },
   { key: "orders:duplicate", module: "Órdenes", label: "Duplicar órdenes" },
+  { key: "orders:print", module: "Órdenes", label: "Imprimir remisión" },
   { key: "orders:edit_processes", module: "Órdenes", label: "Editar/corregir avance de procesos" },
   { key: "monitor:view", module: "Órdenes", label: "Ver monitor de planta" },
   { key: "audit:view", module: "Órdenes", label: "Ver auditoría" },
@@ -66,7 +67,7 @@ export const DEFAULT_ROLE_PERMISSIONS = {
     "troqueles:download",
     "catalogs:view", "catalogs:manage",
     "orders:view", "orders:create", "orders:update", "orders:delete",
-    "orders:operate", "orders:finish", "orders:duplicate",
+    "orders:operate", "orders:finish", "orders:duplicate", "orders:print",
     "orders:edit_processes", "monitor:view", "audit:view",
   ],
   OPERATOR: [
