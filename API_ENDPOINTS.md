@@ -1,91 +1,100 @@
 # API Endpoints
 
-Documento de referencia rápida para los endpoints actuales del backend de `backend-prograficos`.
+Referencia rápida de los endpoints del backend `prograficos-backend`.
+Última actualización verificada contra el código: **2026-10-20**.
 
 ## Base URL
 
 - Local: `http://localhost:5001`
-- Producción detrás de proxy: normalmente la misma API se publica con un prefijo como `/prograficos`
-- Las rutas listadas en este documento corresponden a las rutas internas del backend. Si en producción tu proxy publica la API en `https://api.opita.dev/prograficos`, entonces debes anteponer `/prograficos` a cada endpoint.
+- Producción detrás de proxy: la API suele publicarse con un prefijo (p. ej. `/prograficos`). Las rutas de este documento son las rutas internas; antepón el prefijo del proxy si aplica.
 
 ## Autenticación
 
-- La mayoría de endpoints requieren token.
-- El backend acepta el token en:
+- Casi todos los endpoints requieren token (`verifyToken`).
+- El token se acepta en:
   - cookie `token`
   - header `Authorization: Bearer <token>`
+- Un usuario inactivo no puede autenticarse ni conservar acceso con un token previo.
 
-## Query Params comunes
+## Autorización: permisos (RBAC)
 
-- En varios catálogos puedes usar `?onlyActive=true` para traer solo registros activos.
+Desde 2026-10 la autorización es **por permisos (claims)**, no por rol fijo:
+
+- Los permisos (`key`) son la fuente de verdad del código en `src/constants/permissions.js`. El administrador solo **asigna** permisos a roles; no crea permisos.
+- Los roles son una **tabla en BD** (`role`), con `User.role_id` (FK) y una relación N-N rol↔permiso. Roles de sistema: `ADMIN`, `SUPERVISOR`, `OPERATOR`, `CUSTOMER` (este último reservado para el futuro portal del cliente).
+- **ADMIN** es superusuario: hace bypass de la verificación de permisos.
+- Un bootstrap idempotente (`syncSecurity`) crea/actualiza los permisos en cada arranque y asigna la matriz por defecto a roles que aún no tienen permisos. **No reasigna** permisos a un rol que ya los tiene: los permisos nuevos se asignan manualmente en staging/prod tras el deploy.
+
+Middlewares (en `src/middlewares/role.middleware.js`):
+
+- `requirePermission("x:y")` — exige ese permiso exacto.
+- `requireAnyPermission("a", "b", ...)` — exige al menos uno.
+- `requireAdmin` — solo rol ADMIN (zona de Seguridad: usuarios, roles).
+
+### Lectura compartida por el flujo de órdenes
+
+Crear/ver/editar/operar una orden necesita leer catálogos, terceros, productos y troqueles. Por eso la **lectura** de esos módulos se permite a quien ve/gestiona el módulo **o** trabaja órdenes, mediante listas de claves (`*_READ_KEYS`). La **escritura** sigue exigiendo la key específica (`x:create`/`x:update`/`x:delete` o `catalogs:manage`).
+
+- `CATALOG_READ_KEYS` = `catalogs:view`, `catalogs:manage`, `orders:view/create/update/operate`
+- `THIRDS_READ_KEYS` = `thirds:view/create/update` + flujo de órdenes
+- `PRODUCTS_READ_KEYS` = `products:view/create/update` + flujo de órdenes
+- `TROQUELES_READ_KEYS` = `troqueles:view/create/update` + flujo de órdenes
+- `ORDER_READ_KEYS` = `orders:view/create/update/operate/finish`, `monitor:view`
+
+## Query params comunes
+
+- `?onlyActive=true` trae solo registros activos (catálogos y listados).
+- Listados con paginación: `page`, `pageSize`, `search`, `sortBy`, `sortDirection`.
+
+---
 
 ## Auth
 
-### `POST /auth/register`
+| Método | Ruta | Autorización |
+| --- | --- | --- |
+| POST | `/auth/login` | Público |
+| POST | `/auth/logout` | Público |
+| GET | `/auth/profile` | `verifyToken` |
 
-Body:
+> No existe `POST /auth/register`. El auto-registro público fue retirado: los usuarios se crean solo desde `POST /users/create` (ADMIN).
 
-```json
-{
-  "name": "Juan",
-  "surename": "Pérez",
-  "email": "juan@example.com",
-  "password": "123456"
-}
-```
-
-### `POST /auth/login`
-
-Body:
+`POST /auth/login` body:
 
 ```json
-{
-  "email": "juan@example.com",
-  "password": "123456"
-}
+{ "email": "juan@example.com", "password": "123456" }
 ```
 
-### `POST /auth/logout`
+## Roles y permisos (Seguridad)
 
-Sin body.
+Todas requieren `verifyToken` + `requireAdmin`.
 
-### `GET /auth/profile`
+| Método | Ruta | Descripción |
+| --- | --- | --- |
+| GET | `/roles/permissions` | Catálogo de permisos disponibles (agrupados por módulo). |
+| GET | `/roles/` | Lista de roles con sus permisos. |
+| GET | `/roles/:id` | Detalle de un rol. |
+| POST | `/roles/` | Crear rol. |
+| PUT | `/roles/:id/permissions` | Reemplazar los permisos asignados a un rol. |
+| PUT | `/roles/:id` | Editar rol (label/description; roles de sistema no se eliminan). |
+| DELETE | `/roles/:id` | Eliminar rol (no de sistema). |
 
-Requiere token.
+## Users (Seguridad)
 
-## Users
+Todas requieren `verifyToken` + `requireAdmin`, salvo `/operators`.
 
-### `GET /users/`
+| Método | Ruta | Autorización |
+| --- | --- | --- |
+| GET | `/users/operators` | `verifyToken` + rol `ADMIN`/`SUPERVISOR` (para asignar operarios a maquinaria/procesos). |
+| GET | `/users/` | ADMIN |
+| GET | `/users/check-username` | ADMIN |
+| POST | `/users/create` | ADMIN |
+| PUT | `/users/update/:id` | ADMIN |
+| DELETE | `/users/delete/:id` | ADMIN (borrado lógico) |
+| POST | `/users/:id/avatar` | ADMIN (`multipart/form-data`, campo `file`) |
+| DELETE | `/users/:id/avatar` | ADMIN |
+| GET | `/users/:id` | ADMIN |
 
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-### `GET /users/:id`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-### `POST /users/create`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Body:
-
-```json
-{
-  "name": "Juan",
-  "surename": "Pérez",
-  "email": "juan@example.com",
-  "password": "123456",
-  "role": "USER",
-  "avatar": "https://...",
-  "is_active": true
-}
-```
-
-### `PUT /users/update/:id`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Body:
+`POST /users/create` body:
 
 ```json
 {
@@ -93,139 +102,35 @@ Body:
   "surename": "Pérez",
   "email": "juan@example.com",
   "password": "123456",
-  "role": "USER",
-  "avatar": "https://...",
+  "role_id": 3,
   "is_active": true
 }
 ```
 
-Todos los campos son opcionales; solo se actualizan los enviados.
+## Formats (Catálogo)
 
-### `DELETE /users/delete/:id`
+| Método | Ruta | Autorización |
+| --- | --- | --- |
+| GET | `/formats/` | `requireAnyPermission(...CATALOG_READ_KEYS)` |
+| GET | `/formats/:id` | `...CATALOG_READ_KEYS` |
+| POST | `/formats/` | `catalogs:manage` |
+| PUT | `/formats/:id` | `catalogs:manage` |
+| DELETE | `/formats/:id` | `catalogs:manage` (borrado lógico) |
 
-Requiere rol: `ADMIN`, `SUPERVISOR`
+## Measures (Catálogo)
 
-Sin body. Hace borrado lógico (`is_active = false`).
+Mismo patrón que Formats: GET con `...CATALOG_READ_KEYS`; POST/PUT/DELETE con `catalogs:manage`.
+Body incluye `width`, `height`, `format_id`, `is_active`.
 
-## Formats
+## Paper Types (Catálogo)
 
-### `GET /formats/`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Query opcional:
-
-```txt
-?onlyActive=true
-```
-
-### `GET /formats/:id`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-### `POST /formats/`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Body:
-
-```json
-{
-  "name": "Pliego",
-  "is_active": true
-}
-```
-
-### `PUT /formats/:id`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Body:
-
-```json
-{
-  "name": "Pliego",
-  "is_active": true
-}
-```
-
-### `DELETE /formats/:id`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Sin body. Hace borrado lógico.
-
-## Measures
-
-### `GET /measures/`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`, `EMPLOYEE`, `USER`
-
-Query opcional:
-
-```txt
-?onlyActive=true
-```
-
-### `GET /measures/:id`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`, `EMPLOYEE`, `USER`
-
-### `POST /measures/`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Body:
-
-```json
-{
-  "width": 70,
-  "height": 100,
-  "format_id": 1,
-  "is_active": true
-}
-```
-
-### `PUT /measures/:id`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Body:
-
-```json
-{
-  "width": 70,
-  "height": 100,
-  "format_id": 1,
-  "is_active": true
-}
-```
-
-### `DELETE /measures/:id`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Sin body. Hace borrado lógico.
-
-## Paper Types
-
-### `GET /paper_types/`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Query opcional:
-
-```txt
-?onlyActive=true
-```
-
-### `GET /paper_types/:id`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-### `POST /paper_types/`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
+| Método | Ruta | Autorización |
+| --- | --- | --- |
+| GET | `/paper_types/` | `...CATALOG_READ_KEYS` |
+| GET | `/paper_types/:id` | `...CATALOG_READ_KEYS` |
+| POST | `/paper_types/` | `catalogs:manage` |
+| PUT | `/paper_types/:id` | `catalogs:manage` |
+| DELETE | `/paper_types/:id` | `catalogs:manage` (borrado lógico) |
 
 Body:
 
@@ -234,145 +139,64 @@ Body:
   "name": "Propalcote",
   "description": "Couché",
   "grammage": 300,
+  "service_line_id": 1,
   "is_active": true,
-  "suppliers": [
-    {
-      "third_id": 2,
-      "purchase_price": 1450.5
-    }
-  ]
-}
-```
-
-### `PUT /paper_types/:id`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Body:
-
-```json
-{
-  "name": "Propalcote",
-  "description": "Couché",
-  "grammage": 300,
-  "is_active": true,
-  "suppliers": [
-    {
-      "third_id": 2,
-      "purchase_price": 1450.5
-    }
-  ]
+  "suppliers": [{ "third_id": 2, "purchase_price": 1450.5 }]
 }
 ```
 
 Notas:
 
-- `grammage` es obligatorio.
-- `suppliers` es obligatorio y debe traer al menos un proveedor.
-- Cada proveedor debe ser un tercero activo de tipo `PROVEEDOR`.
-- No se puede repetir el mismo `third_id` dentro del arreglo.
+- `service_line_id` es **obligatorio**: un tipo de papel pertenece a **una** línea de servicio activa.
+- `grammage` obligatorio; `suppliers` obligatorio (≥1), cada uno tercero activo `PROVEEDOR`, sin `third_id` repetido.
+- El listado admite filtro por línea (`?service_line_id=`) y orden por `service_line`.
 
-### `DELETE /paper_types/:id`
+## Machinery (Catálogo)
 
-Requiere rol: `ADMIN`, `SUPERVISOR`
+| Método | Ruta | Autorización |
+| --- | --- | --- |
+| GET | `/machinery/` | `...CATALOG_READ_KEYS` |
+| GET | `/machinery/validate-reference` | `catalogs:manage` |
+| GET | `/machinery/:id` | `...CATALOG_READ_KEYS` |
+| POST | `/machinery/` | `catalogs:manage` |
+| PUT | `/machinery/:id` | `catalogs:manage` |
+| DELETE | `/machinery/:id` | `catalogs:manage` (borrado lógico) |
 
-Sin body. Hace borrado lógico.
+Tipos: `PREPRENSA`, `GUILLOTINA`, `IMPRESORA_OFFSET`, `IMPRESORA_DIGITAL`, `PLASTIFICADORA`, `LAMINADORA`, `BARNIZADORA`, `ESTAMPADORA`, `TROQUELADORA`, `PEGADORA`, `DOBLADORA`, `EMPAQUE`, `OTRA`.
 
-## Machinery
+## Service Lines (Líneas de servicio · Catálogo)
 
-### `GET /machinery/`
+Catálogo transversal que da flexibilidad a los tipos de servicio de la empresa (Offset, Cartón Microcorrugado, Serigrafía, …).
 
-Requiere rol: `ADMIN`, `SUPERVISOR`, `EMPLOYEE`, `USER`
+| Método | Ruta | Autorización |
+| --- | --- | --- |
+| GET | `/service-lines/` | `verifyToken` (dato de referencia usado por varios módulos) |
+| GET | `/service-lines/:id` | `verifyToken` |
+| POST | `/service-lines/` | `catalogs:manage` |
+| PUT | `/service-lines/:id` | `catalogs:manage` |
+| DELETE | `/service-lines/:id` | `catalogs:manage` (borrado físico) |
 
-Query opcional:
-
-```txt
-?onlyActive=true
-```
-
-### `GET /machinery/validate-reference`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Valida disponibilidad/unicidad de una referencia de maquinaria antes de guardar.
-
-### `GET /machinery/:id`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`, `EMPLOYEE`, `USER`
-
-### `POST /machinery/`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
+> La **lectura** se deja abierta a cualquier usuario autenticado porque líneas de servicio es dato de referencia que consultan terceros, papel, productos, procesos y el formulario de órdenes; la **escritura** exige `catalogs:manage`.
 
 Body:
 
 ```json
-{
-  "name": "Heidelberg",
-  "reference": "HD-01",
-  "type": "IMPRESORA_OFFSET",
-  "is_active": true
-}
+{ "name": "Serigrafía", "description": "Línea de serigrafía", "is_active": true }
 ```
 
-### `PUT /machinery/:id`
+Notas:
 
-Requiere rol: `ADMIN`, `SUPERVISOR`
+- `name` único; `?onlyActive=true` filtra activas.
 
-Body:
+## Thirds (Terceros)
 
-```json
-{
-  "name": "Heidelberg",
-  "reference": "HD-01",
-  "type": "IMPRESORA_OFFSET",
-  "is_active": true
-}
-```
-
-Tipos permitidos:
-
-```txt
-PREPRENSA
-GUILLOTINA
-IMPRESORA_OFFSET
-IMPRESORA_DIGITAL
-PLASTIFICADORA
-LAMINADORA
-BARNIZADORA
-ESTAMPADORA
-TROQUELADORA
-PEGADORA
-DOBLADORA
-EMPAQUE
-OTRA
-```
-
-### `DELETE /machinery/:id`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Sin body. Hace borrado lógico.
-
-## Thirds
-
-### `GET /thirds/`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Query opcional:
-
-```txt
-?onlyActive=true
-```
-
-### `GET /thirds/:id`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-### `POST /thirds/`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
+| Método | Ruta | Autorización |
+| --- | --- | --- |
+| GET | `/thirds/` | `...THIRDS_READ_KEYS` |
+| GET | `/thirds/:id` | `...THIRDS_READ_KEYS` |
+| POST | `/thirds/` | `thirds:create` |
+| PUT | `/thirds/:id` | `thirds:update` |
+| DELETE | `/thirds/:id` | `thirds:delete` (borrado lógico) |
 
 Body:
 
@@ -382,74 +206,34 @@ Body:
   "email": "cliente@example.com",
   "address": "Calle 123",
   "type_person": "CLIENTE",
+  "person_type": "JURIDICA",
+  "document_type": "NIT",
+  "document_number": "900123456",
   "company_name": "Empresa SAS",
-  "is_active": true
-}
-```
-
-### `PUT /thirds/:id`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Body:
-
-```json
-{
-  "name": "Cliente Demo",
-  "email": "cliente@example.com",
-  "address": "Calle 123",
-  "type_person": "CLIENTE",
-  "company_name": "Empresa SAS",
-  "is_active": true
-}
-```
-
-### `DELETE /thirds/:id`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Sin body. Hace borrado lógico.
-
-## Products
-
-### `GET /products/`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Query opcional:
-
-```txt
-?onlyActive=true
-```
-
-### `GET /products/:id`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-### `POST /products/`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Body:
-
-```json
-{
-  "name": "Caja Cliente X",
-  "troquel_id": 3,
-  "third_id": 2,
+  "prefix": "EMP",
+  "service_line_ids": [1, 2],
   "is_active": true
 }
 ```
 
 Notas:
 
-- Un `Product` es el puente entre un `Thirds` (cliente) y un `Troqueles`.
-- `troquel_id` y `third_id` son obligatorios y deben referenciar registros activos.
-- `name` es opcional.
+- `type_person`: `CLIENTE`, `PROVEEDOR` u `OTROS`.
+- `service_line_ids` es **obligatorio** (≥1): un tercero (cliente/proveedor) pertenece a 1 o varias líneas de servicio (relación m2m). Todas deben existir y estar activas.
+- `prefix` aplica **solo a CLIENTE** (mayúsculas alfanumérico, máx 4, único); para otros tipos se ignora/limpia.
+- Email y la combinación tipo/número de documento no pueden duplicarse.
 
-### `PUT /products/:id`
+## Products (Productos)
 
-Requiere rol: `ADMIN`, `SUPERVISOR`
+| Método | Ruta | Autorización |
+| --- | --- | --- |
+| GET | `/products/customers` | `...PRODUCTS_READ_KEYS` (clientes con productos, para filtros) |
+| GET | `/products/check-code` | `products:create` o `products:update` (valida unicidad de código por cliente) |
+| GET | `/products/:id` | `...PRODUCTS_READ_KEYS` |
+| GET | `/products/` | `...PRODUCTS_READ_KEYS` |
+| POST | `/products/` | `products:create` |
+| PUT | `/products/:id` | `products:update` |
+| DELETE | `/products/:id` | `products:delete` (borrado lógico) |
 
 Body:
 
@@ -458,193 +242,83 @@ Body:
   "name": "Caja Cliente X",
   "troquel_id": 3,
   "third_id": 2,
+  "service_line_id": 1,
+  "code": "EMP1",
+  "sale_price": 15000,
   "is_active": true
 }
 ```
 
-### `DELETE /products/:id`
+Notas:
 
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Sin body. Hace borrado lógico.
-
-> Nota: El módulo `Product_Customer` (`/product_customers/*`) fue eliminado del
-> dominio. `Product` ahora relaciona directamente `Thirds` con `Troqueles`, por
-> lo que ya no existe una entidad intermedia ni sus endpoints.
+- `Product` relaciona directamente `Thirds` (cliente) con `Troqueles`.
+- `troquel_id`, `third_id` y `service_line_id` son **obligatorios** y deben referenciar registros activos.
+- El **tercero debe pertenecer a la línea** indicada (se valida en backend).
+- `code` opcional = prefijo del cliente + número entero (único por cliente). `name` y `sale_price` opcionales.
+- El listado admite filtro por línea (`?service_line_id=`) y orden por `service_line`.
 
 ## Troqueles
 
-### `GET /troqueles/`
+| Método | Ruta | Autorización |
+| --- | --- | --- |
+| GET | `/troqueles/` | `...TROQUELES_READ_KEYS` |
+| GET | `/troqueles/:id` | `...TROQUELES_READ_KEYS` |
+| POST | `/troqueles/` | `troqueles:create` (`multipart/form-data`) |
+| PUT | `/troqueles/:id` | `troqueles:update` (`multipart/form-data`) |
+| DELETE | `/troqueles/:id` | `troqueles:delete` (borrado lógico) |
+| GET | `/troqueles/:id/images` | `...TROQUELES_READ_KEYS` |
+| POST | `/troqueles/:id/images` | `troqueles:create` o `troqueles:update` (sube imágenes) |
+| DELETE | `/troqueles/:id/images/:imageId` | `troqueles:create` o `troqueles:update` |
 
-Requiere token.
+Campos POST/PUT: `code` (req), `elaboration_date` (opc), `size` (req en create), `is_active` (opc), `file` (archivo; opcional en update). Las imágenes de referencia se guardan por carpeta según tamaño (S/M/L) en almacenamiento R2.
 
-Query opcional:
+## Processes (Procesos · Catálogo)
 
-```txt
-?onlyActive=true
-```
-
-### `GET /troqueles/:id`
-
-Requiere token.
-
-### `POST /troqueles/`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Tipo de request: `multipart/form-data`
-
-Campos:
-
-```txt
-code               string (requerido)
-elaboration_date   string (opcional, fecha)
-size               string (requerido)
-is_active          boolean|string|number (opcional)
-file               archivo requerido
-```
-
-### `PUT /troqueles/:id`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Tipo de request: `multipart/form-data`
-
-Campos:
-
-```txt
-code               string (requerido)
-elaboration_date   string (opcional, fecha)
-size               string (opcional)
-is_active          boolean|string|number (opcional)
-file               archivo opcional
-```
-
-### `DELETE /troqueles/:id`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Sin body. Hace borrado lógico.
-
-## Processes
-
-### `GET /processes/`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Query opcional:
-
-```txt
-?onlyActive=true
-```
-
-### `GET /processes/validate-field-key`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Valida que la `key` de un campo dinámico sea única dentro del proceso.
-
-### `PATCH /processes/reorder`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Reordena los procesos (actualiza el campo `order`).
-
-### `GET /processes/:id`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-### `POST /processes/`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
+| Método | Ruta | Autorización |
+| --- | --- | --- |
+| GET | `/processes/` | `...CATALOG_READ_KEYS` |
+| GET | `/processes/validate-field-key` | `catalogs:manage` (unicidad de `key` de campo dinámico) |
+| PATCH | `/processes/reorder` | `catalogs:manage` (actualiza `order`) |
+| GET | `/processes/:id` | `...CATALOG_READ_KEYS` |
+| POST | `/processes/` | `catalogs:manage` |
+| PUT | `/processes/:id` | `catalogs:manage` |
+| DELETE | `/processes/:id` | `catalogs:manage` (borrado lógico) |
 
 Body:
 
 ```json
 {
-  "name": "Impresión",
-  "order": 2,
-  "category": "IMPRESION",
+  "name": "Troquelado",
+  "order": 4,
+  "category": "TROQUELADO",
+  "service_line_ids": [1, 2],
   "is_active": true,
   "field_definitions": [
-    {
-      "key": "color",
-      "label": "Color",
-      "field_type": "TEXT",
-      "is_required": false,
-      "sort_order": 1,
-      "options": null
-    }
-  ]
-}
-```
-
-`field_definitions` puede ir vacío.
-
-### `PUT /processes/:id`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Body:
-
-```json
-{
-  "name": "Impresión",
-  "order": 2,
-  "category": "IMPRESION",
-  "is_active": true,
-  "field_definitions": [
-    {
-      "id": 5,
-      "key": "color",
-      "label": "Color",
-      "field_type": "TEXT",
-      "is_required": false,
-      "sort_order": 1,
-      "options": null
-    }
+    { "key": "color", "label": "Color", "field_type": "TEXT", "is_required": false, "sort_order": 1, "options": null }
   ]
 }
 ```
 
 Notas:
 
-- Si el campo ya existe, conviene enviar `id`.
-- Si un campo ya tiene registros históricos, no se puede eliminar.
+- `service_line_ids` es **obligatorio** (≥1): un proceso pertenece a 1 o varias líneas (m2m), de modo que un mismo proceso (p. ej. Troquelado) se reutiliza en varias líneas sin duplicarlo.
+- `field_definitions` puede ir vacío; si un campo ya existe conviene enviar su `id`. Un campo con datos históricos no se elimina.
+- `category`: `PREPRENSA`, `CORTE`, `IMPRESION`, `ACABADO`, `TROQUELADO`, `PEGADO`, `EMPAQUE`, `OTRO`.
 
-### `DELETE /processes/:id`
+## Orders (Órdenes)
 
-Requiere rol: `ADMIN`, `SUPERVISOR`
+| Método | Ruta | Autorización |
+| --- | --- | --- |
+| POST | `/order/` | `orders:create` o `orders:duplicate` |
+| GET | `/order/` | `...ORDER_READ_KEYS` |
+| GET | `/order/board` | `monitor:view` (tablero/monitor de planta) |
+| GET | `/order/audit` | `audit:view` (órdenes cerradas con trazabilidad) |
+| GET | `/order/:id` | `...ORDER_READ_KEYS` |
+| PUT | `/order/:id` | `orders:update` |
+| DELETE | `/order/:id` | `orders:delete` (borrado lógico) |
+| PATCH | `/order/:id/finish` | `orders:finish` (marca `TERMINADO`) |
 
-Sin body. Hace borrado lógico.
-
-## Orders
-
-### `GET /order/`
-
-Requiere token.
-
-### `GET /order/:id`
-
-Requiere token.
-
-### `GET /order/board`
-
-Requiere token.
-
-Devuelve las órdenes activas para el monitor/tablero de producción.
-
-### `GET /order/audit`
-
-Requiere token.
-
-Devuelve órdenes cerradas con trazabilidad completa.
-
-### `POST /order/`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Body:
+Body (POST/PUT):
 
 ```json
 {
@@ -665,129 +339,57 @@ Body:
 
 Notas:
 
-- `date_delivery_estimated` en creación puede ir `null` o vacío.
-- `calculation_mode` acepta `TOTAL_REQUIRED` o `SHEETS_REQUIRED`; determina si se calcula `amount_sheets` a partir de `total_estimated` o al revés.
-- `product_id` reemplaza al antiguo `product_customer_id`. El `product.troquel_id` debe coincidir con el `troquel_id` de la orden.
-- `processes` debe llevar al menos un proceso.
+- La **línea de servicio NO se envía ni se persiste** en la orden: en el formulario sirve solo para filtrar cliente, productos, tipos de papel y procesos activos de esa línea. La línea efectiva de una orden se deriva de `product.service_line` (una orden = una línea).
+- `calculation_mode`: `TOTAL_REQUIRED` o `SHEETS_REQUIRED`.
+- `product.troquel_id` debe coincidir con `troquel_id`. `processes` lleva ≥1 proceso.
+- Solo se puede editar si ningún proceso fue iniciado.
 
-### `PUT /order/:id`
+## Order Processes (avance en planta)
 
-Requiere rol: `ADMIN`, `SUPERVISOR`, `EMPLOYEE`
+| Método | Ruta | Autorización |
+| --- | --- | --- |
+| GET | `/order-processes/order/:orderId` | `...ORDER_READ_KEYS` |
+| GET | `/order-processes/:id` | `...ORDER_READ_KEYS` |
+| PATCH | `/order-processes/:id/start` | `orders:operate` |
+| PATCH | `/order-processes/:id/finish` | `orders:operate` |
+| PATCH | `/order-processes/:id/edit` | `orders:edit_processes` (corregir avance de un proceso terminado; recalcula en cascada) |
 
-Body:
+`start` body:
 
 ```json
-{
-  "date_delivery_estimated": "2026-04-10",
-  "calculation_mode": "TOTAL_REQUIRED",
-  "amount_sheets": 1500,
-  "amount_sheets_additional": 0,
-  "cavities": 1,
-  "total_estimated": 1500,
-  "measure_id": 1,
-  "paper_type_id": 2,
-  "troquel_id": 3,
-  "product_id": 4,
-  "processes": [1, 2, 3],
-  "field_values": [],
-  "order_status": "PENDIENTE"
-}
+{ "machinery_id": 1, "observations": "Arranque correcto", "field_values": [{ "field_definition_id": 10, "value": "Azul" }] }
 ```
 
-Nota:
-
-- Solo se puede editar si ningún proceso ha sido iniciado.
-- En la implementación actual conviene enviar siempre `date_delivery_estimated` con una fecha válida al actualizar.
-
-### `DELETE /order/:id`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Sin body. Hace borrado lógico.
-
-### `PATCH /order/:id/finish`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`
-
-Sin body.
-
-Marca la orden como `TERMINADO`.
-
-## Order Processes
-
-### `GET /order-processes/order/:orderId`
-
-Requiere token.
-
-Lista los procesos de una orden.
-
-### `GET /order-processes/:id`
-
-Requiere token.
-
-Detalle de un proceso específico de una orden.
-
-### `PATCH /order-processes/:id/start`
-
-Requiere rol: `ADMIN`, `SUPERVISOR`, `EMPLOYEE`, `USER`
-
-Body:
+`finish` body:
 
 ```json
-{
-  "machinery_id": 1,
-  "observations": "Arranque correcto",
-  "field_values": [
-    {
-      "field_definition_id": 10,
-      "value": "Azul"
-    }
-  ]
-}
+{ "quantity_delivered": 1490, "quantity_damaged": 10 }
 ```
 
 Notas:
 
-- `measure_cutting_id` no debe enviarse; se toma automáticamente de la orden.
-- Solo se puede iniciar si el proceso anterior ya terminó.
-- Los datos de entrada quedan bloqueados después del inicio.
+- `measure_cutting_id` se deriva de la orden; no se envía.
+- Solo se inicia si el proceso anterior ya terminó; solo se finaliza si está `EN_PROCESO`.
+- Tras iniciar, los datos de entrada quedan bloqueados (salvo corrección vía `/edit` con `orders:edit_processes`).
 
-### `PATCH /order-processes/:id/finish`
+---
 
-Requiere rol: `ADMIN`, `SUPERVISOR`, `EMPLOYEE`, `USER`
+## Roles y permisos del sistema
 
-Body:
+Roles de sistema (tabla `role`): `ADMIN`, `SUPERVISOR`, `OPERATOR`, `CUSTOMER` (reservado).
 
-```json
-{
-  "quantity_delivered": 1490,
-  "quantity_damaged": 10
-}
-```
+Permisos (claims) por módulo — fuente: `src/constants/permissions.js`:
 
-Notas:
+- Usuarios/Seguridad: `users:view/create/update/delete`, `security:manage`
+- Terceros: `thirds:view/create/update/delete`
+- Productos: `products:view/create/update/delete`
+- Troqueles: `troqueles:view/create/update/delete/download`
+- Catálogos (medidas, formatos, papel, procesos, maquinaria, **líneas de servicio**): `catalogs:view`, `catalogs:manage`
+- Órdenes: `orders:view/create/update/delete/operate/finish/duplicate/print/print-massive/edit_processes`, `monitor:view`, `audit:view`
 
-- Solo se puede finalizar si ya está `EN_PROCESO`.
-- Al finalizar no se aceptan cambios de maquinaria, medida, observaciones ni campos dinámicos.
-
-## Roles usados en el proyecto
-
-- `ADMIN`
-- `SUPERVISOR`
-- `EMPLOYEE`
-- `USER`
+Matriz por defecto: **ADMIN** todo (bypass); **SUPERVISOR** gestión operativa y de catálogos completa; **OPERATOR** lectura de catálogos/terceros/productos/troqueles + `orders:view/create/update/operate` + `monitor:view`; **CUSTOMER** sin permisos (reservado).
 
 ## Estados comunes
 
-### Orden
-
-- `PENDIENTE`
-- `EN_PROCESO`
-- `TERMINADO`
-- `ENTREGADO`
-
-### Proceso de orden
-
-- `PENDIENTE`
-- `EN_PROCESO`
-- `TERMINADO`
+- **Orden**: `PENDIENTE`, `EN_PROCESO`, `TERMINADO`, `ENTREGADO`
+- **Proceso de orden**: `PENDIENTE`, `EN_PROCESO`, `TERMINADO`

@@ -8,6 +8,7 @@ import {
 } from "../utils/pagination.js";
 
 const paperTypeInclude = {
+  service_line: { select: { id: true, name: true } },
   suppliers: {
     include: {
       third: {
@@ -78,11 +79,24 @@ const buildPaperTypeSearchWhere = (rawSearch) => {
   return { OR: or };
 };
 
+// Filtro exacto por línea de servicio (para el dropdown del datatable).
+const buildPaperTypeServiceLineWhere = (rawServiceLineId) => {
+  const serviceLineId = Number(rawServiceLineId);
+  if (!Number.isInteger(serviceLineId) || serviceLineId <= 0) {
+    return {};
+  }
+  return { service_line_id: serviceLineId };
+};
+
 const paperTypeSortMap = {
   id: (direction) => [{ id: direction }],
   name: (direction) => [{ name: direction }],
   description: (direction) => [{ description: direction }],
   grammage: (direction) => [{ grammage: direction }],
+  service_line: (direction) => [
+    { service_line: { name: direction } },
+    { name: "asc" },
+  ],
   is_active: (direction) => [{ is_active: direction }, { name: "asc" }],
 };
 
@@ -91,10 +105,12 @@ const validatePaperTypePayload = async ({
   description,
   grammage,
   suppliers,
+  service_line_id,
 }) => {
   const normalizedName = name?.trim();
   const normalizedDescription = description?.trim();
   const normalizedGrammage = Number(grammage);
+  const normalizedServiceLineId = Number(service_line_id);
   const normalizedSuppliers = Array.isArray(suppliers)
     ? suppliers.map(normalizeSupplierInput)
     : [];
@@ -110,6 +126,20 @@ const validatePaperTypePayload = async ({
   if (Number.isNaN(normalizedGrammage) || normalizedGrammage <= 0) {
     return {
       error: "El gramaje es obligatorio y debe ser mayor a 0",
+    };
+  }
+
+  if (!Number.isInteger(normalizedServiceLineId) || normalizedServiceLineId <= 0) {
+    return { error: "La línea de servicio es obligatoria" };
+  }
+
+  const serviceLine = await prisma.serviceLine.findFirst({
+    where: { id: normalizedServiceLineId, is_active: true },
+    select: { id: true },
+  });
+  if (!serviceLine) {
+    return {
+      error: "La línea de servicio seleccionada no existe o está inactiva",
     };
   }
 
@@ -170,6 +200,7 @@ const validatePaperTypePayload = async ({
       name: normalizedName,
       description: normalizedDescription,
       grammage: normalizedGrammage,
+      service_line_id: normalizedServiceLineId,
       suppliers: normalizedSuppliers,
     },
   };
@@ -177,12 +208,14 @@ const validatePaperTypePayload = async ({
 
 const createPaperType = async (req, res) => {
   try {
-    const { name, description, grammage, is_active, suppliers } = req.body;
+    const { name, description, grammage, is_active, suppliers, service_line_id } =
+      req.body;
     const validation = await validatePaperTypePayload({
       name,
       description,
       grammage,
       suppliers,
+      service_line_id,
     });
 
     if (validation.error) {
@@ -216,6 +249,7 @@ const createPaperType = async (req, res) => {
         name: data.name,
         description: data.description,
         grammage: data.grammage,
+        service_line_id: data.service_line_id,
         is_active: normalizeIsActive(is_active, true),
         suppliers: {
           create: data.suppliers.map((supplier) => ({
@@ -249,9 +283,13 @@ const getPaperType = async (req, res) => {
       fallbackSortBy: "name",
       fallbackSortDirection: "asc",
     });
+    const filters = [
+      buildPaperTypeSearchWhere(req.query?.search),
+      buildPaperTypeServiceLineWhere(req.query?.service_line_id),
+    ].filter((filter) => Object.keys(filter).length > 0);
     const where = buildActiveWhere(
       req.query,
-      buildPaperTypeSearchWhere(req.query?.search),
+      filters.length > 0 ? { AND: filters } : {},
     );
     const total = await prisma.paper_Type.count({ where });
     const meta = buildPaginationMeta(requestedPage, pageSize, total);
@@ -308,7 +346,8 @@ const getPaperTypeById = async (req, res) => {
 const updatePaperType = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, grammage, is_active, suppliers } = req.body;
+    const { name, description, grammage, is_active, suppliers, service_line_id } =
+      req.body;
     const paperTypeId = parseInt(id, 10);
 
     const paperTypeExists = await prisma.paper_Type.findUnique({
@@ -328,6 +367,7 @@ const updatePaperType = async (req, res) => {
       description,
       grammage,
       suppliers,
+      service_line_id,
     });
 
     if (validation.error) {
@@ -366,6 +406,7 @@ const updatePaperType = async (req, res) => {
           name: data.name,
           description: data.description,
           grammage: data.grammage,
+          service_line_id: data.service_line_id,
           is_active: normalizeIsActive(is_active, paperTypeExists.is_active),
         },
       });

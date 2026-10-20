@@ -16,7 +16,15 @@ const knownThirdTypes = ["CLIENTE", "PROVEEDOR", "OTROS"];
 const knownPersonTypes = ["NATURAL", "JURIDICA"];
 const knownDocumentTypes = ["NIT", "CC", "CE", "PASAPORTE"];
 
+const serviceLinesSelect = {
+  service_lines: {
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  },
+};
+
 const thirdDetailInclude = {
+  ...serviceLinesSelect,
   products: {
     include: {
       troquel: {
@@ -31,6 +39,32 @@ const thirdDetailInclude = {
     },
     orderBy: [{ is_active: "desc" }, { name: "asc" }, { id: "asc" }],
   },
+};
+
+// Líneas de servicio enviadas desde el formulario (array de ids, obligatorio).
+const parseServiceLineIds = (body) => {
+  const raw = body?.service_line_ids;
+  if (!Array.isArray(raw)) return [];
+  return [
+    ...new Set(
+      raw.map((n) => Number(n)).filter((n) => Number.isInteger(n) && n > 0),
+    ),
+  ];
+};
+
+// Valida que haya al menos una línea y que todas existan y estén activas.
+const validateServiceLineIds = async (ids) => {
+  if (!ids.length) {
+    return "Debes seleccionar al menos una línea de servicio";
+  }
+  const found = await prisma.serviceLine.findMany({
+    where: { id: { in: ids }, is_active: true },
+    select: { id: true },
+  });
+  if (found.length !== ids.length) {
+    return "Alguna línea de servicio no existe o está inactiva";
+  }
+  return null;
 };
 
 const buildThirdSearchWhere = (rawSearch) => {
@@ -92,6 +126,10 @@ const buildThirdTypeWhere = (rawTypePerson) => {
 const thirdSortMap = {
   id: (direction) => [{ id: direction }],
   name: (direction) => [{ name: direction }],
+  prefix: (direction) => [
+    { prefix: { sort: direction, nulls: "last" } },
+    { name: "asc" },
+  ],
   email: (direction) => [{ email: direction }],
   type_person: (direction) => [{ type_person: direction }, { name: "asc" }],
   person_type: (direction) => [{ person_type: direction }, { name: "asc" }],
@@ -211,7 +249,10 @@ const validateThirdPayload = async (payload, currentId = null) => {
 const createThirds = async (req, res) => {
   try {
     const payload = normalizeThirdPayload(req.body, true);
-    const validationError = await validateThirdPayload(payload);
+    const serviceLineIds = parseServiceLineIds(req.body);
+    const validationError =
+      (await validateThirdPayload(payload)) ||
+      (await validateServiceLineIds(serviceLineIds));
 
     if (validationError) {
       return res.status(400).json({
@@ -221,7 +262,11 @@ const createThirds = async (req, res) => {
     }
 
     const third = await prisma.thirds.create({
-      data: payload,
+      data: {
+        ...payload,
+        service_lines: { connect: serviceLineIds.map((id) => ({ id })) },
+      },
+      include: thirdDetailInclude,
     });
     res.status(201).json({
       status: "success",
@@ -257,6 +302,7 @@ const getThirds = async (req, res) => {
 
     const thirds = await prisma.thirds.findMany({
       where,
+      include: serviceLinesSelect,
       orderBy: thirdSortMap[sortBy](sortDirection),
       skip: (meta.page - 1) * meta.pageSize,
       take: meta.pageSize,
@@ -313,7 +359,10 @@ const updateThirds = async (req, res) => {
     }
 
     const payload = normalizeThirdPayload(req.body, thirdExists.is_active);
-    const validationError = await validateThirdPayload(payload, thirdId);
+    const serviceLineIds = parseServiceLineIds(req.body);
+    const validationError =
+      (await validateThirdPayload(payload, thirdId)) ||
+      (await validateServiceLineIds(serviceLineIds));
 
     if (validationError) {
       return res.status(400).json({
@@ -324,7 +373,11 @@ const updateThirds = async (req, res) => {
 
     const third = await prisma.thirds.update({
       where: { id: thirdId },
-      data: payload,
+      data: {
+        ...payload,
+        service_lines: { set: serviceLineIds.map((id) => ({ id })) },
+      },
+      include: thirdDetailInclude,
     });
     res.status(200).json({
       status: "success",

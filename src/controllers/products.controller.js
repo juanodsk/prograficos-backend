@@ -9,6 +9,7 @@ import {
 import { parseTroquelSearchTerm } from "../utils/troquel.js";
 
 const productInclude = {
+  service_line: { select: { id: true, name: true } },
   troquel: {
     select: {
       id: true,
@@ -124,6 +125,10 @@ const buildProductThirdWhere = (rawThirdId) => {
 const productSortMap = {
   id: (direction) => [{ id: direction }],
   name: (direction) => [{ name: direction }],
+  service_line: (direction) => [
+    { service_line: { name: direction } },
+    { id: "asc" },
+  ],
   third: (direction) => [{ third: { name: direction } }, { id: "asc" }],
   troquel: (direction) => [{ troquel: { code: direction } }, { id: "asc" }],
   is_active: (direction) => [{ is_active: direction }, { id: "asc" }],
@@ -150,11 +155,17 @@ const normalizeProductPayload = (body, currentIsActive = true) => ({
   code: normalizeProductCode(body?.code),
   troquel_id: body?.troquel_id != null ? Number(body.troquel_id) : NaN,
   third_id: body?.third_id != null ? Number(body.third_id) : NaN,
+  service_line_id:
+    body?.service_line_id != null ? Number(body.service_line_id) : NaN,
   sale_price: normalizeSalePrice(body?.sale_price),
   is_active: normalizeIsActive(body?.is_active, currentIsActive),
 });
 
 const validateProductPayload = async (payload, currentProductId = null) => {
+  if (!Number.isInteger(payload.service_line_id) || payload.service_line_id <= 0) {
+    return "Debes seleccionar una línea de servicio";
+  }
+
   if (Number.isNaN(payload.troquel_id)) {
     return "Debes seleccionar un troquel";
   }
@@ -169,7 +180,14 @@ const validateProductPayload = async (payload, currentProductId = null) => {
     }
   }
 
-  const [troquel, third] = await Promise.all([
+  const [serviceLine, troquel, third] = await Promise.all([
+    prisma.serviceLine.findFirst({
+      where: {
+        id: payload.service_line_id,
+        is_active: true,
+      },
+      select: { id: true },
+    }),
     prisma.troqueles.findFirst({
       where: {
         id: payload.troquel_id,
@@ -181,8 +199,13 @@ const validateProductPayload = async (payload, currentProductId = null) => {
         id: payload.third_id,
         is_active: true,
       },
+      include: { service_lines: { select: { id: true } } },
     }),
   ]);
+
+  if (!serviceLine) {
+    return "La línea de servicio seleccionada no existe o está inactiva";
+  }
 
   if (!troquel) {
     return "El troquel seleccionado no existe o está inactivo";
@@ -190,6 +213,13 @@ const validateProductPayload = async (payload, currentProductId = null) => {
 
   if (!third) {
     return "El tercero seleccionado no existe o está inactivo";
+  }
+
+  const thirdBelongsToLine = third.service_lines?.some(
+    (line) => line.id === payload.service_line_id,
+  );
+  if (!thirdBelongsToLine) {
+    return "El tercero seleccionado no pertenece a la línea de servicio elegida";
   }
 
   // El código es opcional. Si viene, debe ser prefijo del cliente + número

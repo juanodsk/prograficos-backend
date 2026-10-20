@@ -173,6 +173,8 @@ model Process {
 
   is_active Boolean @default(true)
 
+  // Un proceso puede pertenecer a 1 o varias líneas de servicio (m2m).
+  service_lines            ServiceLine[]
   detail_production_orders Detail_Production_Order[]
   field_definitions        Process_Field_Definition[]
   machineries              ProcessMachinery[]
@@ -231,6 +233,25 @@ model Machinery {
   operators           MachineryOperator[]
 
   @@map("machinery")
+}
+
+//////////////////////////////////////////////////////
+// SERVICE LINE (Líneas de servicio: Offset, Microcorrugado, Serigrafía…)
+//////////////////////////////////////////////////////
+
+model ServiceLine {
+  id          Int     @id @default(autoincrement())
+  name        String  @unique
+  description String?
+
+  is_active Boolean @default(true)
+
+  thirds      Thirds[]
+  paper_types Paper_Type[]
+  products    Product[]
+  processes   Process[]
+
+  @@map("service_lines")
 }
 
 // Pivote maquinaria <-> usuario (operarios que pueden operar la máquina).
@@ -294,6 +315,9 @@ model Paper_Type {
 
   is_active Boolean @default(true)
 
+  service_line_id Int
+  service_line    ServiceLine @relation(fields: [service_line_id], references: [id])
+
   header_production_orders Header_Production_Order[]
   suppliers                PaperTypeSupplier[]
 
@@ -322,6 +346,7 @@ model Thirds {
 
   products Product[]
   paper_type_suppliers PaperTypeSupplier[]
+  service_lines ServiceLine[]
 
   @@unique([document_type, document_number])
   @@map("thirds")
@@ -349,14 +374,16 @@ model Product {
   name       String?
   // Código del producto = prefijo del cliente + número (ej: GRN1). Único por cliente.
   code       String?  @db.VarChar(7)
-  troquel_id Int
-  third_id   Int
-  sale_price Decimal? @db.Decimal(12, 2)
+  troquel_id      Int
+  third_id        Int
+  service_line_id Int
+  sale_price      Decimal? @db.Decimal(12, 2)
 
   is_active Boolean @default(true)
 
-  troquel Troqueles @relation(fields: [troquel_id], references: [id])
-  third   Thirds    @relation(fields: [third_id], references: [id])
+  troquel      Troqueles   @relation(fields: [troquel_id], references: [id])
+  third        Thirds      @relation(fields: [third_id], references: [id])
+  service_line ServiceLine @relation(fields: [service_line_id], references: [id])
 
   header_production_orders Header_Production_Order[]
 

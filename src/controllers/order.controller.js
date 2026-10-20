@@ -86,6 +86,10 @@ const orderListSelect = {
   product: {
     select: {
       name: true,
+      // Una orden pertenece a UNA línea: la del producto elegido al crearla.
+      service_line: {
+        select: { id: true, name: true },
+      },
       third: {
         select: {
           name: true,
