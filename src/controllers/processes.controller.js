@@ -3,6 +3,10 @@ import { buildActiveWhere, normalizeIsActive } from "../utils/active.js";
 import { toSnakeCase } from "../utils/string.js";
 
 const processInclude = {
+  service_lines: {
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  },
   field_definitions: {
     where: { deleted_at: null },
     orderBy: { sort_order: "asc" },
@@ -12,6 +16,32 @@ const processInclude = {
       machinery: true,
     },
   },
+};
+
+// Un proceso pertenece a 1 o varias líneas de servicio (m2m). Valida que se
+// envíe al menos una y que todas existan y estén activas. Devuelve los ids
+// normalizados (sin repetir) o un mensaje de error.
+const validateServiceLineIds = async (rawServiceLineIds) => {
+  const ids = Array.isArray(rawServiceLineIds)
+    ? [...new Set(rawServiceLineIds.map((id) => Number(id)))]
+    : [];
+
+  if (!ids.length || ids.some((id) => !Number.isInteger(id) || id <= 0)) {
+    return { error: "Debes seleccionar al menos una línea de servicio" };
+  }
+
+  const found = await prisma.serviceLine.findMany({
+    where: { id: { in: ids }, is_active: true },
+    select: { id: true },
+  });
+
+  if (found.length !== ids.length) {
+    return {
+      error: "Una o varias líneas de servicio no existen o están inactivas",
+    };
+  }
+
+  return { serviceLineIds: ids };
 };
 
 const fieldKeyPattern = /^(?=.*[A-Za-z0-9])[A-Za-z0-9_]+$/;
@@ -221,8 +251,17 @@ const validateProcessFieldKey = async (req, res) => {
 
 const createProcess = async (req, res) => {
   try {
-    const { name, order, category, is_active, field_definitions = [], machinery_ids = [] } = req.body;
+    const { name, order, category, is_active, service_line_ids, field_definitions = [], machinery_ids = [] } = req.body;
     const normalizedOrder = normalizeProcessOrder(order);
+
+    const serviceLineValidation = await validateServiceLineIds(service_line_ids);
+    if (serviceLineValidation.error) {
+      return res.status(400).json({
+        status: "error",
+        message: serviceLineValidation.error,
+      });
+    }
+
     const normalizedFieldDefinitions = field_definitions.map(
       normalizeFieldDefinitionInput,
     );
@@ -260,6 +299,9 @@ const createProcess = async (req, res) => {
         name,
         order: normalizedOrder ?? (maxOrderResult._max.order || 0) + 1,
         category,
+        service_lines: {
+          connect: serviceLineValidation.serviceLineIds.map((id) => ({ id })),
+        },
         is_active: normalizeIsActive(is_active, true),
         field_definitions: normalizedFieldDefinitions.length
           ? {
@@ -347,9 +389,18 @@ const getProcessById = async (req, res) => {
 const updateProcess = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, order, category, is_active, field_definitions = [], machinery_ids } = req.body;
+    const { name, order, category, is_active, service_line_ids, field_definitions = [], machinery_ids } = req.body;
     const processId = parseInt(id, 10);
     const normalizedOrder = normalizeProcessOrder(order);
+
+    const serviceLineValidation = await validateServiceLineIds(service_line_ids);
+    if (serviceLineValidation.error) {
+      return res.status(400).json({
+        status: "error",
+        message: serviceLineValidation.error,
+      });
+    }
+
     const normalizedFieldDefinitions = field_definitions.map(
       normalizeFieldDefinitionInput,
     );
@@ -485,6 +536,9 @@ const updateProcess = async (req, res) => {
           name,
           order: normalizedOrder ?? existingProcess.order,
           category,
+          service_lines: {
+            set: serviceLineValidation.serviceLineIds.map((id) => ({ id })),
+          },
           is_active: normalizeIsActive(is_active, existingProcess.is_active),
         },
       });

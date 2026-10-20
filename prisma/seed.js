@@ -2406,18 +2406,28 @@ async function seedAdmin() {
 }
 
 async function seedProcesses(machineryByRef = {}) {
+  // Todo proceso pertenece a una línea de servicio (obligatorio): por defecto
+  // Offset. Se asegura su existencia por si el seed de líneas aún no corrió.
+  const offset = await prisma.serviceLine.upsert({
+    where: { name: "Offset" },
+    update: {},
+    create: { name: "Offset", is_active: true },
+  });
+
   for (const blueprint of processBlueprints) {
     const process = await prisma.process.upsert({
       where: { name: blueprint.name },
       update: {
         order: blueprint.order,
         category: blueprint.category,
+        service_lines: { connect: { id: offset.id } },
         is_active: true,
       },
       create: {
         name: blueprint.name,
         order: blueprint.order,
         category: blueprint.category,
+        service_lines: { connect: { id: offset.id } },
         is_active: true,
       },
     });
@@ -2460,6 +2470,17 @@ async function seedMachinery() {
     machineryByRef[record.reference] = record;
   }
   return machineryByRef;
+}
+
+async function seedServiceLines() {
+  const names = ["Offset", "Cartón Microcorrugado", "Serigrafía"];
+  for (const name of names) {
+    await prisma.serviceLine.upsert({
+      where: { name },
+      update: { is_active: true },
+      create: { name, is_active: true },
+    });
+  }
 }
 
 async function seedTroqueles() {
@@ -2528,6 +2549,11 @@ async function seedFormatsAndMeasures() {
 }
 
 async function seedPaperTypes() {
+  // Todo papel pertenece a una línea de servicio (obligatorio): por defecto Offset.
+  const offset = await prisma.serviceLine.findUnique({
+    where: { name: "Offset" },
+  });
+
   for (const paperTypeSeed of paperTypeSeeds) {
     const existingPaperType = await prisma.paper_Type.findFirst({
       where: {
@@ -2548,6 +2574,7 @@ async function seedPaperTypes() {
     await prisma.paper_Type.create({
       data: {
         ...paperTypeSeed,
+        service_line_id: offset.id,
         is_active: true,
       },
     });
@@ -2601,6 +2628,11 @@ async function seedPaperSuppliers() {
 }
 
 async function seedProducts() {
+  // Todo producto pertenece a una línea de servicio (obligatorio): por defecto Offset.
+  const offset = await prisma.serviceLine.findUnique({
+    where: { name: "Offset" },
+  });
+
   for (const productSeed of productSeeds) {
     const troquel = await prisma.troqueles.findFirst({
       where: {
@@ -2612,7 +2644,7 @@ async function seedProducts() {
       where: { email: productSeed.thirdEmail },
     });
 
-    if (!troquel || !third) continue;
+    if (!troquel || !third || !offset) continue;
 
     const existingProduct = await prisma.product.findFirst({
       where: {
@@ -2629,6 +2661,7 @@ async function seedProducts() {
           name: productSeed.name,
           troquel_id: troquel.id,
           third_id: third.id,
+          service_line_id: offset.id,
           is_active: true,
         },
       });
@@ -2640,6 +2673,7 @@ async function seedProducts() {
         name: productSeed.name,
         troquel_id: troquel.id,
         third_id: third.id,
+        service_line_id: offset.id,
         is_active: true,
       },
     });
@@ -2888,6 +2922,8 @@ async function seedCatalogs() {
   console.log("✅ Procesos, campos y maquinaria asociada listos");
 
   await seedTroqueles();
+
+  await seedServiceLines();
   console.log("✅ Troqueles listos");
 
   await seedFormatsAndMeasures();
