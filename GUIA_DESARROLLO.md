@@ -44,7 +44,7 @@ Fortalezas actuales:
 - Separación clara de routers, controladores, middlewares y utilidades.
 - Prisma centralizado en `src/config/db.js`.
 - Autenticación JWT con comprobación de usuario activo en cada petición.
-- Autorización declarativa por roles en routers.
+- Autorización declarativa **por permisos (RBAC)** en routers (`requirePermission` / `requireAnyPermission` / `requireAdmin`); los roles viven en BD y solo asignan permisos.
 - Uso de transacciones en operaciones compuestas importantes.
 - Borrado lógico extendido a los catálogos principales.
 - Paginación, búsquedas y ordenamiento reutilizables.
@@ -150,7 +150,7 @@ El repositorio contiene nombres históricos mezclados. No se hace un cambio masi
 ### 6.1 Rutas
 
 - Toda ruta nueva DEBE declarar explícitamente `verifyToken`, salvo que exista una decisión documentada para hacerla pública.
-- `authorizeRoles` DEBE ejecutarse después de `verifyToken`.
+- La autorización (`requirePermission` / `requireAnyPermission` / `requireAdmin`) DEBE ejecutarse después de `verifyToken`.
 - Los paths estáticos, por ejemplo `/audit`, `/board` o `/validate-reference`, DEBEN registrarse antes que `/:id`.
 - Se usa `GET` para lectura, `POST` para creación, `PUT` solo para reemplazo completo y `PATCH` para cambios parciales o transiciones.
 - Se evita incluir verbos en URLs CRUD. Las transiciones de dominio sí pueden usar acciones, por ejemplo `PATCH /orders/:id/finish`.
@@ -247,23 +247,27 @@ Reglas:
 - CORS con credenciales exige una lista exacta de orígenes; nunca se usa `*`.
 - No se registran tokens, cookies, hashes ni bodies con credenciales.
 
-### 7.2 Roles
+### 7.2 Autorización por permisos (RBAC)
 
-- Los permisos viven en rutas o políticas reutilizables, no únicamente dentro de botones del frontend.
-- Un endpoint con efectos productivos DEBE tener una decisión explícita de roles.
-- Los cambios de rol deben impedir escalamiento de privilegios.
+El sistema autoriza por **permisos (claims)**, no por rol fijo:
+
+- Los permisos (`key`) son la **fuente de verdad del código** en `src/constants/permissions.js` (array `PERMISSIONS`). El administrador solo **asigna** permisos a roles; no inventa permisos nuevos.
+- Los roles son una **tabla en BD** (`role`) con relación N-N a permisos; `User.role_id` apunta al rol. Roles de sistema (`is_system`, no eliminables): `ADMIN`, `SUPERVISOR`, `OPERATOR`, `CUSTOMER` (reservado para el futuro portal de cliente).
+- **ADMIN** es superusuario: hace *bypass* de la verificación en el middleware; no necesita permisos listados.
+- El bootstrap `syncSecurity` corre en cada arranque: **crea/actualiza** los permisos del código y aplica `DEFAULT_ROLE_PERMISSIONS` a roles que aún no tienen permisos. **No reasigna** permisos a un rol que ya los tiene; por eso, al agregar un permiso nuevo, se **asigna manualmente** a SUPERVISOR/otros en staging/prod tras el deploy.
+
+Reglas:
+
+- Toda ruta con efectos productivos DEBE declarar su permiso con `requirePermission`/`requireAnyPermission` (o `requireAdmin` para la zona de Seguridad: usuarios y roles).
+- La **lectura** de catálogos, terceros, productos y troqueles se abre también al flujo de órdenes mediante listas `*_READ_KEYS` (ver `permissions.js`), porque ver/crear/operar una orden exige consultar esos datos de referencia. La **escritura** sigue exigiendo la key específica.
+- Líneas de servicio (`/service-lines`): la lectura (`GET`) solo exige `verifyToken` (dato de referencia transversal); la escritura exige `catalogs:manage`.
+- El frontend usa los mismos permisos para mostrar/ocultar UI (`hasPermission`), pero el backend SIEMPRE revalida.
 - Un usuario inactivo no puede autenticarse ni conservar acceso mediante un token previo.
 - Las acciones críticas deberían registrar actor, fecha y recurso afectado.
 
-### 7.3 Registro público actual
+### 7.3 Creación de usuarios
 
-`POST /auth/register` es público y crea usuarios `USER`. Ese rol puede iniciar y terminar procesos de órdenes. Antes de exposición abierta se DEBE tomar una decisión de producto y seguridad:
-
-- deshabilitar auto-registro en producción;
-- exigir invitación/aprobación; o
-- reducir los permisos del rol auto-registrado.
-
-No se debe asumir que el rol por defecto elimina el riesgo.
+No existe auto-registro público: `POST /auth/register` fue retirado. Los usuarios se crean solo desde `POST /users/create` (ADMIN), que asigna `role_id`. Mantener este criterio: la creación de cuentas es una operación privilegiada, no un flujo abierto.
 
 ## 8. Configuración y secretos
 
@@ -395,6 +399,19 @@ PENDIENTE ──start──► EN_PROCESO ──finish──► TERMINADO
 - Cambiar el tipo de un campo con datos históricos requiere una migración/compatibilidad explícita.
 
 La implementación actual almacena valores como `String` y no aplica todas estas validaciones; es una brecha prioritaria, no una razón para repetir el patrón.
+
+### 10.6 Líneas de servicio (ServiceLine)
+
+Catálogo transversal (`ServiceLine`: `name` único, `description`, `is_active`) que modela los tipos de servicio de la empresa (Offset, Cartón Microcorrugado, Serigrafía, …) y da flexibilidad al dominio. Relaciones y reglas:
+
+- **Terceros ↔ ServiceLine: m2m.** Un cliente/proveedor pertenece a 1 o varias líneas (`service_line_ids` obligatorio ≥1). Pivote implícito `_ServiceLineToThirds`.
+- **Paper_Type → ServiceLine: FK única obligatoria** (`service_line_id`). Un papel pertenece a una sola línea.
+- **Product → ServiceLine: FK única obligatoria.** Además, el **tercero del producto debe pertenecer a esa línea** (se valida en backend).
+- **Process ↔ ServiceLine: m2m** (`service_line_ids` obligatorio ≥1). Un proceso se reutiliza en varias líneas sin duplicarse (p. ej. Troquelado en Offset y Cartón Microcorrugado). Pivote `_ProcessToServiceLine`.
+- **Órdenes: la línea NO se persiste.** En el formulario solo filtra cliente, productos, tipos de papel y procesos *activos* de la línea elegida. La línea efectiva de una orden se deriva de `product.service_line` (una orden = una línea).
+- Las FK 1-N usan `ON DELETE RESTRICT` (no se borra una línea en uso); los pivotes m2m usan `ON DELETE CASCADE`.
+- Las migraciones que introdujeron estas relaciones hacen **backfill de una sola ejecución** asignando `Offset` a todo lo existente, de forma idempotente (`INSERT ... ON CONFLICT DO NOTHING`) e independiente del seed. Al convertir `Process` a m2m, la migración **preserva** la línea previa pasándola al pivote antes de eliminar la columna escalar.
+- Al validar relaciones se exige que las líneas referenciadas existan y estén **activas**.
 
 ## 11. Archivos de troquel
 
@@ -589,13 +606,16 @@ Un cambio está terminado cuando:
 
 ## 21. Hallazgos verificados durante este análisis
 
-- El esquema Prisma actual es válido y contiene 15 modelos y 10 enums (se agregó `ProcessMachinery` como relación proceso-maquinaria).
-- La sintaxis de los archivos JavaScript bajo `src/` y `prisma/` es válida.
-- Hay 69 endpoints Express efectivamente montados (sin contar `product_customer`, que no está montado).
-- `product_customer` fue eliminado por completo: el modelo se quitó por migración y los archivos `product_customer.controller.js` y `product_customer.routes.js` se borraron de `src/` (2026-09-08). `Product` ahora relaciona directamente `Thirds` con `Troqueles`. Las migraciones históricas que mencionan la tabla `product_customer` se conservan intactas (historia ya aplicada).
-- La documentación histórica usa todavía `product_customer_id` en órdenes, mientras el código actual usa `product_id` y valida `troquel_id`.
-- El archivo de troquel es opcional en el esquema/controlador, aunque la referencia histórica lo presenta como obligatorio.
-- El monitor de órdenes (`GET /order/board`), la validación de maquinaria (`GET /machinery/validate-reference`) y la validación/reordenamiento de procesos (`GET /processes/validate-field-key`, `PATCH /processes/reorder`) ya están reflejados en `API_ENDPOINTS.md`.
-- El esquema pasó `prisma validate`; no se ejecutaron pruebas funcionales porque el proyecto no incluye una suite.
+Última verificación: **2026-10-20** (con Node 20).
+
+- El esquema Prisma es válido (`prisma validate`) y contiene **21 modelos y 9 enums**. Incluye `ServiceLine` y su integración con terceros, papel, productos y procesos.
+- Hay **85 endpoints** Express montados en `src/routes/` (incluye roles, líneas de servicio, imágenes de troquel, avatar de usuario, etc.).
+- `prisma migrate status` reporta la base al día; `migrate diff` entre la DB y el schema no muestra drift.
+- **Autorización por permisos (RBAC):** los roles son tabla en BD (`role`, `User.role_id`) y el acceso se verifica por `key` de permiso (`src/constants/permissions.js`) con `requirePermission`/`requireAnyPermission`/`requireAdmin`. `syncSecurity` crea permisos y aplica la matriz por defecto a roles sin permisos (no reasigna existentes).
+- **Auto-registro retirado:** `POST /auth/register` ya no existe; las cuentas se crean desde `POST /users/create` (ADMIN).
+- **Líneas de servicio:** catálogo transversal con relaciones m2m (terceros, procesos) y FK única (papel, producto). Migraciones de backfill de una sola ejecución dejan todo lo existente en `Offset`; la conversión de `Process` a m2m preserva datos. FKs 1-N con `ON DELETE RESTRICT`, pivotes con `ON DELETE CASCADE`. Sin huérfanos ni nulos verificados.
+- `product_customer` sigue eliminado (desde 2026-09-08); `Product` relaciona `Thirds` ↔ `Troqueles` (+ `ServiceLine`).
+- El archivo de troquel es opcional; las imágenes de referencia se gestionan por endpoints `/:id/images` (R2).
+- No se ejecutaron pruebas funcionales automatizadas porque el proyecto no incluye una suite.
 
 Estos hallazgos describen el estado observado, no sustituyen una auditoría de seguridad ni pruebas end-to-end con una base aislada.
