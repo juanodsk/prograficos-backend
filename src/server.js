@@ -3,6 +3,7 @@ import http from "http";
 import morgan from "morgan";
 import { config } from "dotenv";
 import { connectDB, disconnectDB } from "./config/db.js";
+import { connectMongo, disconnectMongo, getMongoState } from "./config/mongo.js";
 import { syncSecurity } from "./bootstrap/syncSecurity.js";
 import cookieParser from "cookie-parser";
 import cors from "cors";
@@ -43,6 +44,8 @@ const socketPath = process.env.SOCKET_IO_PATH || "/socket.io";
 const port = Number(process.env.PORT || 5001);
 
 connectDB();
+// Store de documentos (Mongo). No bloquea el arranque ni es fatal si falla.
+connectMongo();
 
 const app = express();
 const server = http.createServer(app);
@@ -102,7 +105,11 @@ if (io) {
 }
 
 app.get("/health", (_req, res) => {
-  res.status(200).json({ status: "ok", uptime: process.uptime() });
+  res.status(200).json({
+    status: "ok",
+    uptime: process.uptime(),
+    mongo: getMongoState(),
+  });
 });
 
 app.use("/users", userRoutes);
@@ -135,24 +142,32 @@ server.listen(port, () => {
   }
 });
 
+// Cierre ordenado de las dependencias (Postgres/Prisma + Mongo).
+const closeConnections = async () => {
+  await Promise.allSettled([disconnectDB(), disconnectMongo()]);
+};
+
 process.on("unhandledRejection", (err) => {
   console.error("Unhandled Rejection:", err);
   server.close(async () => {
-    await disconnectDB();
+    await closeConnections();
     process.exit(1);
   });
 });
 
 process.on("uncaughtException", async (err) => {
   console.error("Uncaught Exception:", err);
-  await disconnectDB();
+  await closeConnections();
   process.exit(1);
 });
 
-process.on("SIGTERM", async () => {
-  console.log("SIGTERM received, shutting down gracefully");
+const gracefulShutdown = (signal) => {
+  console.log(`${signal} received, shutting down gracefully`);
   server.close(async () => {
-    await disconnectDB();
+    await closeConnections();
     process.exit(0);
   });
-});
+};
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));

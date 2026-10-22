@@ -55,6 +55,12 @@ export const PERMISSIONS = [
   { key: "orders:edit_processes", module: "Órdenes", label: "Editar/corregir avance de procesos" },
   { key: "monitor:view", module: "Órdenes", label: "Ver monitor de planta" },
   { key: "audit:view", module: "Órdenes", label: "Ver auditoría" },
+
+  // Cotizaciones (almacén de documentos en Mongo)
+  { key: "quotations:view", module: "Cotizaciones", label: "Ver cotizaciones" },
+  { key: "quotations:create", module: "Cotizaciones", label: "Crear cotizaciones" },
+  { key: "quotations:update", module: "Cotizaciones", label: "Editar cotizaciones" },
+  { key: "quotations:delete", module: "Cotizaciones", label: "Eliminar cotizaciones" },
 ];
 
 // Matriz por defecto rol -> permisos. Reproduce el acceso actual del sistema.
@@ -70,6 +76,7 @@ export const DEFAULT_ROLE_PERMISSIONS = {
     "orders:view", "orders:create", "orders:update", "orders:delete",
     "orders:operate", "orders:finish", "orders:duplicate", "orders:print",
     "orders:print-massive", "orders:edit_processes", "monitor:view", "audit:view",
+    "quotations:view", "quotations:create", "quotations:update", "quotations:delete",
   ],
   OPERATOR: [
     "thirds:view",
