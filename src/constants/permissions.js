@@ -61,6 +61,7 @@ export const PERMISSIONS = [
   { key: "quotations:create", module: "Cotizaciones", label: "Crear cotizaciones" },
   { key: "quotations:update", module: "Cotizaciones", label: "Editar cotizaciones" },
   { key: "quotations:delete", module: "Cotizaciones", label: "Eliminar cotizaciones" },
+  { key: "quotations:print", module: "Cotizaciones", label: "Imprimir cotizaciones" },
 ];
 
 // Matriz por defecto rol -> permisos. Reproduce el acceso actual del sistema.
@@ -77,6 +78,7 @@ export const DEFAULT_ROLE_PERMISSIONS = {
     "orders:operate", "orders:finish", "orders:duplicate", "orders:print",
     "orders:print-massive", "orders:edit_processes", "monitor:view", "audit:view",
     "quotations:view", "quotations:create", "quotations:update", "quotations:delete",
+    "quotations:print",
   ],
   OPERATOR: [
     "thirds:view",
