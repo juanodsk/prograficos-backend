@@ -186,6 +186,12 @@ const resolveItem = async (item, serviceLineId) => {
     costosManuales: item.costos,
     costing: pickCosting(result),
   };
+  // Precio final al cliente: el ajustado por el usuario (negociación) o, si no
+  // lo ajustó, el valor unitario sugerido por el motor.
+  itemDoc.costing.valorUnitarioFinal =
+    item.valorUnitarioFinal != null
+      ? item.valorUnitarioFinal
+      : itemDoc.costing.valorUnitario;
   return { itemDoc };
 };
 
@@ -220,7 +226,7 @@ export const createQuotation = async (payload, userId = null) => {
 
   const granTotal = built.items.reduce(
     // Gran total a cobrar = Σ (valor unitario × cantidad) por producto.
-    (acc, it) => acc + it.costing.valorUnitario * it.cantidad,
+    (acc, it) => acc + it.costing.valorUnitarioFinal * it.cantidad,
     0,
   );
 
@@ -315,7 +321,7 @@ export const updateQuotation = async (id, payload) => {
   existing.items = built.items;
   existing.granTotal = built.items.reduce(
     // Gran total a cobrar = Σ (valor unitario × cantidad) por producto.
-    (acc, it) => acc + it.costing.valorUnitario * it.cantidad,
+    (acc, it) => acc + it.costing.valorUnitarioFinal * it.cantidad,
     0,
   );
   await existing.save();

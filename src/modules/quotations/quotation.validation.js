@@ -61,6 +61,13 @@ const validateItem = (item, index) => {
   if (costosTotal <= 0) {
     return `${label}: los costos no pueden quedar todos en $0`;
   }
+  // Precio final (negociación): opcional; si viene, entero > 0.
+  if (item.valorUnitarioFinal != null && item.valorUnitarioFinal !== "") {
+    const vuf = toInt(item.valorUnitarioFinal);
+    if (!Number.isInteger(vuf) || vuf <= 0) {
+      return `${label}: el valor unitario final no es válido`;
+    }
+  }
   return null;
 };
 
@@ -85,6 +92,11 @@ const normalizeItem = (item) => ({
   measureId: item.measureId ? toInt(item.measureId) : null,
   porcentajeGanancia: Number(item.porcentajeGanancia),
   costos: normalizeCostos(item.costos),
+  // null = usar el valor unitario sugerido (automático).
+  valorUnitarioFinal:
+    item.valorUnitarioFinal != null && item.valorUnitarioFinal !== ""
+      ? toInt(item.valorUnitarioFinal)
+      : null,
 });
 
 const normalizeClient = (client) => {

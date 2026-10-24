@@ -95,7 +95,10 @@ const costingSchema = new Schema(
     costosManuales: { type: Number, required: true }, // fijos + troquelado + plastificado
     subtotalCostos: { type: Number, required: true },
     totalCotizar: { type: Number, required: true },
-    valorUnitario: { type: Number, required: true },
+    valorUnitario: { type: Number, required: true }, // sugerido (automático)
+    // Precio final al cliente: = valorUnitario salvo que el usuario lo ajuste
+    // (negociación). Es el que se usa para el total e impresión.
+    valorUnitarioFinal: { type: Number, required: true },
   },
   subDocOptions,
 );
