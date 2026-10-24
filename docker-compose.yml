@@ -1,0 +1,53 @@
+# Infraestructura de datos de Prográficos (almacén de documentos: MongoDB).
+#
+# Objetivo: que la data de Mongo SOBREVIVA a cada despliegue/reinicio.
+# La clave es el volumen con nombre `mongo_prograficos_data`, declarado como
+# EXTERNAL: Compose se engancha al volumen que ya existe y NUNCA lo elimina,
+# ni siquiera con `docker compose down -v`. Así no se repite el "reset" de BD.
+#
+# ── Uso (desarrollo) ────────────────────────────────────────────────────────
+#   1ª vez (migrar el contenedor suelto actual a compose, SIN perder data):
+#     docker rm -f mongo-prograficos        # borra SOLO el contenedor; el volumen queda intacto
+#     docker compose up -d                  # levanta usando el MISMO volumen
+#   Día a día:
+#     docker compose stop                   # apaga sin borrar nada
+#     docker compose start                  # vuelve a levantar
+#   NUNCA uses `docker compose down -v` (la -v elimina volúmenes).
+#
+# ── Producción ───────────────────────────────────────────────────────────────
+#   Mismo principio: volumen persistente + activar autenticación.
+#   Define las variables en un .env junto a este archivo (ver bloque comentado)
+#   y ajusta MONGO_URI del backend para incluir usuario/clave.
+
+services:
+  mongo:
+    image: mongo:8
+    container_name: mongo-prograficos
+    # `unless-stopped`: Docker lo vuelve a levantar tras reiniciar la máquina,
+    # salvo que lo hayas apagado a propósito.
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_prograficos_data:/data/db
+    # ── Autenticación (recomendado en PRODUCCIÓN) ────────────────────────────
+    # Descomenta y define MONGO_ROOT_USER / MONGO_ROOT_PASSWORD en un .env.
+    # OJO: estas variables solo crean el usuario la PRIMERA vez que el volumen
+    # está vacío; sobre un volumen con datos ya existentes no hacen nada.
+    # environment:
+    #   MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
+    #   MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+    # command: ["mongod", "--auth"]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  # EXTERNAL: el volumen ya existe (creado con el `docker run` original) y
+  # Compose NO debe crearlo ni destruirlo. El `name` fija el nombre exacto para
+  # que no se le anteponga el prefijo del proyecto (que apuntaría a uno vacío).
+  mongo_prograficos_data:
+    external: true
+    name: mongo_prograficos_data
