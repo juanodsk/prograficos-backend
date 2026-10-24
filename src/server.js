@@ -22,6 +22,7 @@ import machineryRoutes from "./routes/machinery.routes.js";
 import serviceLineRoutes from "./routes/service_line.routes.js";
 import orderRoutes from "./routes/order.routes.js";
 import orderProcessRoutes from "./routes/order_process.routes.js";
+import quotationRoutes from "./modules/quotations/quotation.routes.js";
 
 config();
 
@@ -126,6 +127,7 @@ app.use("/machinery", machineryRoutes);
 app.use("/service-lines", serviceLineRoutes);
 app.use("/order", orderRoutes);
 app.use("/order-processes", orderProcessRoutes);
+app.use("/quotations", quotationRoutes);
 
 // Sincroniza roles/permisos del sistema (idempotente) antes de escuchar.
 try {
