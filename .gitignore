@@ -8,3 +8,6 @@ API_ENDPOINTS.md
 
 # Respaldos locales de Mongo
 backups/
+
+# Diagramas Archify (no versionar por ahora)
+.archify/
