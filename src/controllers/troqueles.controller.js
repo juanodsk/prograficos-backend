@@ -18,7 +18,17 @@ import {
 
 const parseTroquelId = (id) => parseInt(id, 10);
 
-const knownSizes = ["SMALL", "MEDIUM", "LARGE", "EXTERNAL"];
+const knownSizes = ["SMALL", "MEDIUM", "LARGE", "EXTRA_LARGE", "EXTERNAL"];
+
+// La línea de servicio a la que pertenece el troquel (Offset / Cartón...).
+// Un troquel pertenece a UNA sola línea.
+const parseServiceLineId = (value) => {
+  const id = Number.parseInt(value, 10);
+  return Number.isInteger(id) && id > 0 ? id : null;
+};
+
+const serviceLineExists = (id) =>
+  prisma.serviceLine.findUnique({ where: { id }, select: { id: true } });
 const troquelCodePattern = /^(?=.*[A-Za-z0-9])[A-Za-z0-9_]+$/;
 const duplicateCodeMessage =
   "El código del troquel ya está siendo utilizado para ese tamaño";
@@ -126,6 +136,8 @@ const troquelListSelect = {
   code: true,
   description: true,
   size: true,
+  service_line_id: true,
+  service_line: { select: { id: true, name: true } },
   createdAt: true,
   updatedAt: true,
   is_active: true,
@@ -157,6 +169,20 @@ const createTroqueles = async (req, res) => {
       });
     }
 
+    const serviceLineId = parseServiceLineId(req.body.service_line_id);
+    if (!serviceLineId) {
+      return res.status(400).json({
+        status: "error",
+        message: "La línea de servicio del troquel es obligatoria",
+      });
+    }
+    if (!(await serviceLineExists(serviceLineId))) {
+      return res.status(400).json({
+        status: "error",
+        message: "La línea de servicio seleccionada no existe",
+      });
+    }
+
     const duplicateTroquel = await findTroquelBySizeAndCode({
       code: normalizedCode,
       size,
@@ -177,6 +203,7 @@ const createTroqueles = async (req, res) => {
           ? new Date(elaboration_date)
           : new Date(),
         size,
+        service_line_id: serviceLineId,
         is_active: normalizeIsActive(is_active, true),
       },
     });
@@ -217,10 +244,12 @@ const getTroqueles = async (req, res) => {
     const sizeFilter = knownSizes.includes(req.query?.size)
       ? req.query.size
       : null;
+    const serviceLineFilter = parseServiceLineId(req.query?.service_line_id);
     const where = {
       ...buildActiveWhere(req.query, buildTroquelSearchWhere(req.query?.search)),
       deleted_at: null, // los borrados (soft delete) no aparecen en la lista
       ...(sizeFilter ? { size: sizeFilter } : {}),
+      ...(serviceLineFilter ? { service_line_id: serviceLineFilter } : {}),
     };
     const total = await prisma.troqueles.count({ where });
     const meta = buildPaginationMeta(requestedPage, pageSize, total);
@@ -333,6 +362,24 @@ const updateTroqueles = async (req, res) => {
       });
     }
 
+    // Línea de servicio: si no viene en el body, se conserva la actual.
+    let normalizedServiceLineId = troquelExists.service_line_id;
+    if (req.body.service_line_id != null && req.body.service_line_id !== "") {
+      normalizedServiceLineId = parseServiceLineId(req.body.service_line_id);
+      if (!normalizedServiceLineId) {
+        return res.status(400).json({
+          status: "error",
+          message: "La línea de servicio del troquel no es válida",
+        });
+      }
+      if (!(await serviceLineExists(normalizedServiceLineId))) {
+        return res.status(400).json({
+          status: "error",
+          message: "La línea de servicio seleccionada no existe",
+        });
+      }
+    }
+
     const duplicateTroquel = await findTroquelBySizeAndCode({
       code: normalizedCode,
       size: normalizedSize,
@@ -353,6 +400,7 @@ const updateTroqueles = async (req, res) => {
         ? new Date(elaboration_date)
         : troquelExists.elaboration_date,
       size: normalizedSize,
+      service_line_id: normalizedServiceLineId,
       is_active: normalizeIsActive(is_active, troquelExists.is_active),
     };
 
