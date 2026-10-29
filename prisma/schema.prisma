@@ -79,6 +79,7 @@ enum Size {
   SMALL
   MEDIUM
   LARGE
+  EXTRA_LARGE
   EXTERNAL
 }
 
@@ -250,6 +251,7 @@ model ServiceLine {
   paper_types Paper_Type[]
   products    Product[]
   processes   Process[]
+  troqueles   Troqueles[]
 
   @@map("service_lines")
 }
@@ -406,6 +408,11 @@ model Troqueles {
 
   is_active  Boolean   @default(true)
   deleted_at DateTime?
+
+  // Un troquel pertenece a UNA sola línea de servicio (Offset / Cartón...).
+  // Obligatoria: los existentes se migraron a Offset con un backfill previo.
+  service_line_id Int
+  service_line    ServiceLine @relation(fields: [service_line_id], references: [id])
 
   header_production_orders Header_Production_Order[]
   products                 Product[]

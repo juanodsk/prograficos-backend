@@ -16,6 +16,7 @@ const SIZE_FOLDER = {
   SMALL: "S",
   MEDIUM: "M",
   LARGE: "L",
+  EXTRA_LARGE: "XL",
   EXTERNAL: "E",
 };
 
@@ -56,7 +57,10 @@ export const attachTroquelImages = async (troquelId, files) => {
 
   const sizeFolder = SIZE_FOLDER[troquel.size];
   if (!sizeFolder) {
-    throw new HttpError(400, "El troquel no tiene un tamaño válido (S/M/L)");
+    throw new HttpError(
+      400,
+      "El troquel no tiene un tamaño válido (S/M/L/XL/E)",
+    );
   }
 
   // Validación de negocio (el backend es la autoridad; el frontend puede mentir).
