@@ -3,7 +3,12 @@ import http from "http";
 import morgan from "morgan";
 import { config } from "dotenv";
 import { connectDB, disconnectDB } from "./config/db.js";
-import { connectMongo, disconnectMongo, getMongoState } from "./config/mongo.js";
+import {
+  connectMongo,
+  disconnectMongo,
+  getMongoState,
+} from "./config/mongo.js";
+import { apiLimiter } from "./middlewares/rateLimit.js";
 import { syncSecurity } from "./bootstrap/syncSecurity.js";
 import cookieParser from "cookie-parser";
 import cors from "cors";
@@ -49,6 +54,7 @@ connectDB();
 connectMongo();
 
 const app = express();
+app.set("trust proxy", 1); // detrás de Traefik: usa la IP real del cliente (X-Forwarded-For), no la del proxy
 const server = http.createServer(app);
 
 const corsOptions = {
@@ -113,6 +119,7 @@ app.get("/health", (_req, res) => {
   });
 });
 
+app.use(apiLimiter);
 app.use("/users", userRoutes);
 app.use("/auth", authRoutes);
 app.use("/roles", roleRoutes);
