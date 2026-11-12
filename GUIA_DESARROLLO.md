@@ -23,28 +23,31 @@ La aplicación usa una arquitectura por capas:
 HTTP / Socket.IO
       │
       ▼
-src/server.js
+src/server.js ──► rate limiting (express-rate-limit) + /health
       │
       ▼
 routes ──► middlewares de autenticación/autorización
       │
-      ▼
-controllers
-      ├── validación y normalización
-      ├── reglas de negocio
-      ├── consultas/transacciones Prisma
-      └── construcción de respuesta y eventos
+      ├── routes clásicas (src/routes/) ──► controllers ──► Prisma Client ──► PostgreSQL
+      │        ├── validación y normalización
+      │        ├── reglas de negocio
+      │        ├── consultas/transacciones Prisma
+      │        └── construcción de respuesta y eventos
       │
-      ▼
-Prisma Client ──► PostgreSQL
+      └── módulo quotations (src/modules/quotations/) ──► service ──► Mongoose ──► MongoDB
 ```
+
+La persistencia es **híbrida**: el dominio principal (usuarios, terceros, productos, troqueles, órdenes, catálogos) vive en **PostgreSQL** vía Prisma; el módulo de **Cotizaciones** vive en **MongoDB** vía Mongoose (`src/config/mongo.js`), organizado como módulo por recurso (ver 3.2). La conexión Mongo no bloquea el arranque: si falla, el resto de la API sigue operando.
 
 Fortalezas actuales:
 
 - Separación clara de routers, controladores, middlewares y utilidades.
-- Prisma centralizado en `src/config/db.js`.
+- Prisma centralizado en `src/config/db.js`; Mongoose en `src/config/mongo.js`.
 - Autenticación JWT con comprobación de usuario activo en cada petición.
 - Autorización declarativa **por permisos (RBAC)** en routers (`requirePermission` / `requireAnyPermission` / `requireAdmin`); los roles viven en BD y solo asignan permisos.
+- **Rate limiting** global y de login (`express-rate-limit`) con `trust proxy` para la IP real detrás de Traefik.
+- **`/health`** para vida del proceso y estado de Mongo; **cierre ordenado** ante `SIGTERM`/`SIGINT` y manejo de `unhandledRejection`/`uncaughtException`.
+- Primer módulo organizado por recurso con capa de servicio/validación: `src/modules/quotations/`.
 - Uso de transacciones en operaciones compuestas importantes.
 - Borrado lógico extendido a los catálogos principales.
 - Paginación, búsquedas y ordenamiento reutilizables.
@@ -52,12 +55,11 @@ Fortalezas actuales:
 
 Límites actuales:
 
-- Los controladores grandes mezclan transporte, negocio y persistencia; `order.controller.js` supera las 1200 líneas.
-- No existe capa formal de servicios, validadores ni repositorios.
-- No hay middleware global de errores, handler 404, health check ni cierre para `SIGINT`.
-- No hay suite de pruebas, lint, formatter, OpenAPI ni CI.
+- Los controladores clásicos grandes mezclan transporte, negocio y persistencia; `order.controller.js` supera las 1200 líneas (el módulo `quotations/` ya sigue el patrón por capas deseado).
+- La capa formal de servicios/validadores solo existe aún en `quotations/`; el resto son controladores directos.
+- Sigue faltando middleware global de errores y handler 404 JSON (el `/health` y el cierre por señales ya existen).
+- No hay suite de pruebas automatizada integrada, lint, formatter, OpenAPI ni CI (hay un test suelto `quotation.costing.test.js`).
 - Los contratos de respuesta y las convenciones de rutas no son uniformes.
-- Hay código heredado de `product_customer` que ya no corresponde al esquema.
 
 ## 3. Dirección arquitectónica
 
@@ -332,9 +334,13 @@ npx prisma migrate deploy
 
 - Un tercero tiene tipo `CLIENTE`, `PROVEEDOR` u `OTROS`, además de tipo de persona y documento válidos.
 - Email y combinación tipo/número de documento no pueden duplicarse.
-- Un `Product` relaciona directamente un `Thirds` con un `Troqueles`.
+- `company_name` ("Nombre Comercial") es opcional y visible para persona Jurídica y Natural.
+- Un `Product` relaciona directamente un `Thirds` con un `Troqueles` (+ `ServiceLine`).
 - Al crear/editar producto, tercero y troquel deben existir y estar activos.
+- **Borrado de producto: es DEFINITIVO (físico), no lógico.** Se bloquea (409) si el producto está en ≥1 orden; si no, se elimina de la BD y la relación con el troquel se libera sola (el troquel no se toca). _Inactivar_ (ocultar de futuras órdenes) es aparte, por edición (`is_active`). Es la excepción explícita a la regla general de borrado lógico (principio 5): un producto creado por error/duplicado sin historia productiva sí puede eliminarse.
 - El módulo antiguo `Product_Customer` ya no forma parte del dominio actual.
+- **Un troquel pertenece a UNA línea de servicio** (`service_line_id` obligatorio, FK). Los existentes se migraron a `Offset`.
+- `size` del troquel (enum `Size`): `SMALL`, `MEDIUM`, `LARGE`, `EXTRA_LARGE`, `EXTERNAL`. Las imágenes R2 se agrupan por carpeta S/M/L/XL/E.
 - El código de troquel es único por combinación `(size, code)`, sin distinguir mayúsculas en validación de aplicación.
 - El archivo del troquel es opcional; si se envía debe pasar validación de upload.
 
@@ -415,7 +421,7 @@ Catálogo transversal (`ServiceLine`: `name` único, `description`, `is_active`)
 
 ## 11. Archivos de troquel
 
-La implementación actual usa `multer.memoryStorage()` con límite de 20 MB y persiste base64 en la tabla.
+Las **imágenes de referencia** del troquel se almacenan en **Cloudflare R2** (modelo `Troquel_Image` con `storage_key`; la URL pública se firma al leer) y se gestionan por los endpoints `/:id/images`, agrupadas por carpeta según el tamaño (S/M/L/XL/E). El upload usa `multer.memoryStorage()` con límite de 20 MB.
 
 Reglas:
 
@@ -606,10 +612,14 @@ Un cambio está terminado cuando:
 
 ## 21. Hallazgos verificados durante este análisis
 
-Última verificación: **2026-10-20** (con Node 20).
+Última verificación: **2026-11-12** (con Node 20).
 
-- El esquema Prisma es válido (`prisma validate`) y contiene **21 modelos y 9 enums**. Incluye `ServiceLine` y su integración con terceros, papel, productos y procesos.
-- Hay **85 endpoints** Express montados en `src/routes/` (incluye roles, líneas de servicio, imágenes de troquel, avatar de usuario, etc.).
+- El esquema Prisma (PostgreSQL) es válido (`prisma validate`) y contiene **21 modelos y 9 enums**. Incluye `ServiceLine` y su integración con terceros, papel, productos, procesos y **troqueles** (FK línea obligatoria).
+- Persistencia **híbrida**: el módulo de **Cotizaciones** (`src/modules/quotations/`) usa **MongoDB** vía Mongoose, fuera de Prisma. La conexión Mongo no bloquea el arranque.
+- Hay **~92 endpoints** montados (91 en `src/routes/` + `src/modules/quotations/`, más `GET /health`). Incluye roles, líneas de servicio, imágenes de troquel, avatar de usuario, cotizaciones, etc.
+- **Rate limiting** activo (`express-rate-limit`): límite global 100/min y login 5/5min, con `trust proxy: 1`. `GET /health` reporta uptime y estado de Mongo; cierre ordenado ante `SIGTERM`/`SIGINT`.
+- El enum `Size` incluye `EXTRA_LARGE`; las imágenes de troquel viven en **R2** por carpeta S/M/L/XL/E.
+- **Borrado de producto es físico** cuando no hay órdenes asociadas (409 si las hay); el troquel no se ve afectado.
 - `prisma migrate status` reporta la base al día; `migrate diff` entre la DB y el schema no muestra drift.
 - **Autorización por permisos (RBAC):** los roles son tabla en BD (`role`, `User.role_id`) y el acceso se verifica por `key` de permiso (`src/constants/permissions.js`) con `requirePermission`/`requireAnyPermission`/`requireAdmin`. `syncSecurity` crea permisos y aplica la matriz por defecto a roles sin permisos (no reasigna existentes).
 - **Auto-registro retirado:** `POST /auth/register` ya no existe; las cuentas se crean desde `POST /users/create` (ADMIN).
