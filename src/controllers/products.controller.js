@@ -400,6 +400,10 @@ const updateProduct = async (req, res) => {
   }
 };
 
+// Eliminación DEFINITIVA (no lógica). Solo se bloquea si el producto está en
+// alguna orden (dato histórico). Si no, se borra de la BD: al eliminar la fila
+// la asociación con el troquel se rompe sola, y el troquel físico queda intacto
+// y libre. La inactivación (is_active) es otra cosa y se maneja desde la edición.
 const deleteProduct = async (req, res) => {
   try {
     const id = Number.parseInt(req.params.id, 10);
@@ -414,19 +418,32 @@ const deleteProduct = async (req, res) => {
       });
     }
 
-    await prisma.product.update({
-      where: { id },
-      data: { is_active: false },
+    // Único candado: ¿está asociado a alguna orden? No se puede borrar.
+    const ordersCount = await prisma.header_Production_Order.count({
+      where: { product_id: id },
     });
+
+    if (ordersCount > 0) {
+      return res.status(409).json({
+        status: "error",
+        message:
+          "No se puede eliminar: el producto está asociado a una o más órdenes.",
+      });
+    }
+
+    // Sin órdenes → borrado real. El troquel asociado no se toca (solo se libera
+    // la relación al desaparecer el producto).
+    await prisma.product.delete({ where: { id } });
 
     res.status(200).json({
       status: "success",
-      message: "Producto desactivado exitosamente",
+      message: "Producto eliminado definitivamente.",
     });
   } catch (error) {
+    console.log(error);
     res.status(500).json({
       status: "error",
-      message: "Error al desactivar el producto",
+      message: "Error al eliminar el producto",
     });
   }
 };

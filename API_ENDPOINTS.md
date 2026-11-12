@@ -1,12 +1,32 @@
 # API Endpoints
 
 Referencia rápida de los endpoints del backend `prograficos-backend`.
-Última actualización verificada contra el código: **2026-10-20**.
+Última actualización verificada contra el código: **2026-11-12**.
+
+## Persistencia
+
+- **PostgreSQL** (vía Prisma) es la base principal del dominio (usuarios, terceros, productos, troqueles, órdenes, catálogos).
+- **MongoDB** (vía Mongoose) almacena el módulo de **Cotizaciones** (documentos flexibles). Ver sección _Quotations_.
 
 ## Base URL
 
-- Local: `http://localhost:5001`
-- Producción detrás de proxy: la API suele publicarse con un prefijo (p. ej. `/prograficos`). Las rutas de este documento son las rutas internas; antepón el prefijo del proxy si aplica.
+- Local: `http://localhost:5001` (por defecto; puede ser otro según `PORT`, p. ej. `5099`).
+- Producción (Easypanel/Traefik): el backend se publica bajo su **propio dominio** y el navegador lo llama directo (no hay prefijo de ruta). Las rutas de este documento son las rutas internas.
+
+## Rate limiting
+
+Protección contra sobrecarga/bots (`express-rate-limit`, algoritmo de ventana fija):
+
+- **Global:** 100 peticiones/min por IP, aplicado **después de `/health`** (para no capar el healthcheck del proxy).
+- **Login:** `POST /auth/login` limitado a 5 intentos/5 min por IP (anti fuerza bruta; no cuenta los logins exitosos).
+- `app.set("trust proxy", 1)` para leer la IP real del cliente detrás de Traefik.
+- Al exceder, responde **429**.
+
+## Health
+
+| Método | Ruta | Autorización |
+| --- | --- | --- |
+| GET | `/health` | Público (vida del proceso + estado de Mongo) |
 
 ## Autenticación
 
@@ -221,6 +241,7 @@ Notas:
 - `type_person`: `CLIENTE`, `PROVEEDOR` u `OTROS`.
 - `service_line_ids` es **obligatorio** (≥1): un tercero (cliente/proveedor) pertenece a 1 o varias líneas de servicio (relación m2m). Todas deben existir y estar activas.
 - `prefix` aplica **solo a CLIENTE** (mayúsculas alfanumérico, máx 4, único); para otros tipos se ignora/limpia.
+- `company_name` ("Nombre Comercial") es **opcional** y visible tanto para persona Jurídica (J) como Natural (N).
 - Email y la combinación tipo/número de documento no pueden duplicarse.
 
 ## Products (Productos)
@@ -233,7 +254,7 @@ Notas:
 | GET | `/products/` | `...PRODUCTS_READ_KEYS` |
 | POST | `/products/` | `products:create` |
 | PUT | `/products/:id` | `products:update` |
-| DELETE | `/products/:id` | `products:delete` (borrado lógico) |
+| DELETE | `/products/:id` | `products:delete` (borrado **definitivo**, ver nota) |
 
 Body:
 
@@ -256,6 +277,7 @@ Notas:
 - El **tercero debe pertenecer a la línea** indicada (se valida en backend).
 - `code` opcional = prefijo del cliente + número entero (único por cliente). `name` y `sale_price` opcionales.
 - El listado admite filtro por línea (`?service_line_id=`) y orden por `service_line`.
+- **Borrado definitivo (`DELETE`):** no es lógico. Se bloquea con **409** si el producto está asociado a **≥1 orden** (dato histórico). Si no, se elimina de la BD; la relación con el troquel se libera sola y el troquel físico queda intacto. _Inactivar_ un producto (ocultarlo de futuras órdenes) es otra cosa y se hace por edición (`is_active=false`), independientemente de órdenes o troquel.
 
 ## Troqueles
 
@@ -270,7 +292,14 @@ Notas:
 | POST | `/troqueles/:id/images` | `troqueles:create` o `troqueles:update` (sube imágenes) |
 | DELETE | `/troqueles/:id/images/:imageId` | `troqueles:create` o `troqueles:update` |
 
-Campos POST/PUT: `code` (req), `elaboration_date` (opc), `size` (req en create), `is_active` (opc), `file` (archivo; opcional en update). Las imágenes de referencia se guardan por carpeta según tamaño (S/M/L) en almacenamiento R2.
+Campos POST/PUT: `code` (req), `elaboration_date` (opc), `size` (req en create), `service_line_id` (**req**), `is_active` (opc), `file` (archivo; opcional en update).
+
+Notas:
+
+- `service_line_id` es **obligatorio**: un troquel pertenece a **una** línea de servicio (Offset / Cartón Microcorrugado / …). Los troqueles existentes se migraron a `Offset` con un backfill de una sola ejecución.
+- `size` (enum `Size`): `SMALL`, `MEDIUM`, `LARGE`, `EXTRA_LARGE`, `EXTERNAL`.
+- El listado admite filtro por línea (`?service_line_id=`).
+- Las imágenes de referencia se guardan por carpeta según tamaño (**S / M / L / XL / E**) en almacenamiento R2 y se exponen por los endpoints `/:id/images`.
 
 ## Processes (Procesos · Catálogo)
 
@@ -372,6 +401,24 @@ Notas:
 - Solo se inicia si el proceso anterior ya terminó; solo se finaliza si está `EN_PROCESO`.
 - Tras iniciar, los datos de entrada quedan bloqueados (salvo corrección vía `/edit` con `orders:edit_processes`).
 
+## Quotations (Cotizaciones · MongoDB)
+
+Módulo nuevo organizado en `src/modules/quotations/` (routes, controller, service, validation, costing, numbering, model Mongoose). **Persiste en MongoDB**, no en Postgres.
+
+| Método | Ruta | Autorización |
+| --- | --- | --- |
+| POST | `/quotations/` | `quotations:create` |
+| GET | `/quotations/` | `quotations:view` |
+| GET | `/quotations/:id` | `quotations:view` |
+| PUT | `/quotations/:id` | `quotations:update` |
+| PATCH | `/quotations/:id/send` | `quotations:update` (marca la cotización como enviada) |
+| DELETE | `/quotations/:id` | `quotations:delete` |
+
+Notas:
+
+- Incluye cálculo de costeo (`quotation.costing.js`) y numeración consecutiva (`quotation.numbering.js`).
+- La conexión Mongo se abre en `src/config/mongo.js`; **no** bloquea el arranque del backend si Mongo no está disponible (el resto de la API sigue funcionando). La base de datos se toma de la ruta del `MONGO_URI`.
+
 ---
 
 ## Roles y permisos del sistema
@@ -386,6 +433,7 @@ Permisos (claims) por módulo — fuente: `src/constants/permissions.js`:
 - Troqueles: `troqueles:view/create/update/delete/download`
 - Catálogos (medidas, formatos, papel, procesos, maquinaria, **líneas de servicio**): `catalogs:view`, `catalogs:manage`
 - Órdenes: `orders:view/create/update/delete/operate/finish/duplicate/print/print-massive/edit_processes`, `monitor:view`, `audit:view`
+- Cotizaciones: `quotations:view/create/update/delete/print`
 
 Matriz por defecto: **ADMIN** todo (bypass); **SUPERVISOR** gestión operativa y de catálogos completa; **OPERATOR** lectura de catálogos/terceros/productos/troqueles + `orders:view/create/update/operate` + `monitor:view`; **CUSTOMER** sin permisos (reservado).
 

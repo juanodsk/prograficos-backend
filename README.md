@@ -27,9 +27,11 @@ El dominio se organiza alrededor de este flujo:
 | Runtime | Node.js con ES Modules | Node 20 en Docker |
 | API HTTP | Express | 4.22.1 |
 | ORM | Prisma Client / Prisma CLI | 5.22.0 |
-| Base de datos | PostgreSQL | Configurada mediante `DATABASE_URL` |
+| Base de datos (dominio) | PostgreSQL | Configurada mediante `DATABASE_URL` |
+| Base de datos (documentos) | MongoDB + Mongoose | Módulo de Cotizaciones; `MONGO_URI` (mongoose 9) |
 | Autenticación | JSON Web Token + bcryptjs | jsonwebtoken 9.0.3 / bcryptjs 3.0.3 |
 | Sesión web | Cookie HTTP-only o Bearer token | cookie-parser 1.4.7 |
+| Rate limiting | express-rate-limit | Global 100/min + login 5/5min |
 | Tiempo real | Socket.IO | 4.8.3 |
 | Carga de archivos | Multer en memoria | 2.1.1, máximo 20 MB por troquel |
 | Observabilidad básica | Morgan + consola | morgan 1.10.1 |
@@ -41,18 +43,23 @@ El proyecto no tiene actualmente suite de pruebas, linter, formatter, documentac
 
 ```mermaid
 flowchart LR
-    C["Cliente HTTP"] --> E["Express y middlewares"]
+    C["Cliente HTTP"] --> RL["Rate limit + /health"]
+    RL --> E["Express y middlewares"]
     E --> R["Routers"]
     R --> CT["Controllers"]
     CT --> P["Prisma Client"]
     P --> DB[("PostgreSQL")]
+    R --> QM["Modulo quotations (service)"]
+    QM --> MG["Mongoose"]
+    MG --> MDB[("MongoDB")]
     C <--> S["Socket.IO"]
     CT --> S
     U["Archivo multipart"] --> M["Multer en memoria"]
     M --> CT
+    CT --> R2[("Cloudflare R2 (imagenes troquel)")]
 ```
 
-Es una arquitectura por capas sencilla. Los routers declaran transporte y permisos; los controladores concentran hoy validación, reglas de negocio y acceso a datos; Prisma define el modelo y las migraciones. La separación futura esperada para lógica compleja está detallada en `GUIA_DESARROLLO.md`.
+Es una arquitectura por capas con **persistencia híbrida**: el dominio principal usa Prisma/**PostgreSQL** y el módulo de **Cotizaciones** (`src/modules/quotations/`) usa Mongoose/**MongoDB**. Los routers declaran transporte y permisos; los controladores clásicos concentran hoy validación, reglas de negocio y acceso a datos (el módulo de cotizaciones ya separa service/validation). Las imágenes de troquel se guardan en **Cloudflare R2**. Hay rate limiting (`express-rate-limit`) con `trust proxy`, `/health` y cierre ordenado por señales. La separación futura esperada para lógica compleja está detallada en `GUIA_DESARROLLO.md`.
 
 ## Estructura de carpetas
 
@@ -70,14 +77,14 @@ backend-prograficos/
 │   ├── routes/                  # Endpoints Express por recurso
 │   ├── utils/                   # Activos, paginación, strings, JWT y tiempo real
 │   └── server.js                # Composición de la app, CORS, Socket.IO y arranque
-├── API_ENDPOINTS.md             # Referencia histórica; requiere sincronización
+├── API_ENDPOINTS.md             # Referencia de endpoints (sincronizada 2026-11-12)
 ├── GUIA_DESARROLLO.md           # Estándar de desarrollo del equipo
 ├── Dockerfile
 ├── package.json
 └── prisma.config.ts
 ```
 
-`src/controllers/product_customer.controller.js` y `src/routes/product_customer.routes.js` son código heredado no montado. El modelo `Product_Customer` fue eliminado por la migración de abril de 2026; no deben importarse ni exponerse nuevamente.
+El modelo `Product_Customer` y sus archivos (`product_customer.controller.js` / `product_customer.routes.js`) fueron **eliminados** (2026-09-08); no deben reintroducirse. Hoy `Product` relaciona directamente `Thirds` ↔ `Troqueles` (+ `ServiceLine`). El módulo nuevo de **Cotizaciones** vive en `src/modules/quotations/` (MongoDB).
 
 ## Modelo de dominio resumido
 
@@ -127,6 +134,8 @@ El seed crea catálogos, usuarios y órdenes de demostración. Contiene credenci
 | Variable | Requerida | Valor por defecto | Uso |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | Sí | Ninguno | Cadena de conexión PostgreSQL de Prisma. |
+| `MONGO_URI` | Sí (para Cotizaciones) | Ninguno | Conexión MongoDB (Mongoose). La **base** se toma de la ruta de la URI; en prod incluir `?authSource=admin`. |
+| Credenciales **R2** | Sí (imágenes de troquel) | Ninguno | Endpoint/bucket/llaves de Cloudflare R2 (ver `.env.example`). Nunca se versionan. |
 | `JWT_SECRET` | Sí | Ninguno | Firma y validación de tokens. Usar un secreto largo y aleatorio. |
 | `PORT` | No | `5001` | Puerto HTTP interno. |
 | `CORS_ALLOWED_ORIGINS` | No | Lista definida en `server.js` | Orígenes exactos separados por coma, sin rutas. |
