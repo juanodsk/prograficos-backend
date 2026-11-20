@@ -363,7 +363,12 @@ const buildOrderSearchFilter = (rawSearch, options = {}) => {
         is: {
           third: {
             is: {
-              name: buildInsensitiveContains(search),
+              // La columna "Cliente" muestra company_name (Nombre Comercial) con
+              // fallback a name, así que el buscador debe cubrir AMBOS campos.
+              OR: [
+                { name: buildInsensitiveContains(search) },
+                { company_name: buildInsensitiveContains(search) },
+              ],
             },
           },
         },
